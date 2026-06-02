@@ -12,3 +12,6 @@ data/raw/*
 data/processed/*
 figures/*
 !**/.gitkeep
+
+# pyvis dumps bundled JS/CSS next to generated html
+lib/

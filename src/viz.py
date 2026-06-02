@@ -142,7 +142,10 @@ def community_network():
     G = nx.read_graphml(config.DATA_PROCESSED / "graph.graphml")
     comm = load_csv("nodes_communities.csv").set_index("node")["community_louvain"].to_dict()
     cent = load_csv("nodes_centrality.csv").set_index("node")["pagerank"].to_dict()
-    net = Network(height="750px", width="100%", bgcolor="#111", font_color="white")
+    # cdn_resources="remote" -> pyvis links JS/CSS from a CDN instead of dumping
+    # a local lib/ folder next to the html.
+    net = Network(height="750px", width="100%", bgcolor="#111", font_color="white",
+                  cdn_resources="remote")
     palette = ["#e6194B", "#3cb44b", "#4363d8", "#f58231", "#911eb4",
                "#42d4f4", "#f032e6", "#bfef45", "#fabed4", "#469990"]
     for node in G.nodes:
