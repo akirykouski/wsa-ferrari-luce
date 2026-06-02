@@ -32,10 +32,18 @@ BLUESKY_QUERIES = [
 
 REDDIT_QUERIES = [
     "Ferrari Luce",
-    "Ferrari EV",
-    "Ferrari electric",
     "Ferrari Elettrica",
-    '"Luce"',
+    "Ferrari electric",
+    "Ferrari EV",
+    "Ferrari electric car",
+]
+
+# Relevance filter for loose full-text matches (esp. PullPush). The car is
+# "Ferrari Luce", but "luce" alone = "light" in Italian -> noise. We keep a post
+# only if it has the exact "ferrari luce" pairing OR Ferrari + an EV-context token.
+RELEVANCE_ANY = [
+    "electric", "elettrica", " ev", "ev ", "battery", "all-electric",
+    "jony ive", "lovefrom", "first electric", "maranello ev",
 ]
 
 SUBREDDITS = [

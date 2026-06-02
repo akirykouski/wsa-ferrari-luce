@@ -1,22 +1,28 @@
-"""LAB 2 — Reddit collector.
+"""LAB 2 — Reddit collector. Two interchangeable paths, same output schema:
 
-Primary path: PRAW in read-only OAuth (client id + secret + user agent).
-Fallback:     PullPush.io (free, no key) for time-sliced historical pulls.
+  PRAW   — read-only OAuth (needs a Reddit script app: client id + secret).
+  PullPush.io — free, **NO ACCOUNT / NO KEY**, public Pushshift-successor API.
+
+`main()` auto-selects: if Reddit API creds are present it uses PRAW, otherwise it
+falls back to PullPush so the project works even without a Reddit developer app.
 
 Key gotchas handled here:
-  * comment trees are lazy  -> submission.comments.replace_more(limit=0)
+  * comment trees are lazy  -> submission.comments.replace_more(limit=0)  (PRAW)
   * listing 1000-item cap   -> diversify across subreddits x sort x time_filter
+  * PullPush rate limits     -> polite sleeps + retry/backoff
 
 Run:  python -m src.collect_reddit
 Outputs:  data/processed/reddit_submissions.csv , reddit_comments.csv
 """
 from __future__ import annotations
+import os
+import time
 from datetime import datetime, timezone
 import requests
 import pandas as pd
 
 from . import config
-from .utils import log, require_env, with_retries, save_csv, dedup
+from .utils import log, require_env, with_retries, save_csv, dedup, load_env
 
 
 # ----------------------------------------------------------------------------
@@ -123,34 +129,154 @@ def collect_comments(reddit, submission_ids: list[str]) -> pd.DataFrame:
 
 
 # ----------------------------------------------------------------------------
-# PullPush.io (fallback) — free, no key. Limits: 15/30 rpm, 1000/hour.
+# PullPush.io — free, NO ACCOUNT / NO KEY. Limits: 15 soft / 30 hard rpm, 1000/hr.
+# Pushshift-family params (after/before are epoch seconds, sort=desc).
 # ----------------------------------------------------------------------------
 PULLPUSH = "https://api.pullpush.io/reddit/search"
+_PP_SLEEP = 2.5  # seconds between requests to stay under the rate limit
 
 
-def pullpush_search(kind: str, query: str, subreddit: str | None = None,
-                    since: int | None = None, until: int | None = None,
-                    size: int = config.PULLPUSH_PAGE_SIZE) -> list[dict]:
-    """kind in {'submission','comment'}. since/until are epoch seconds."""
-    params = {"q": query, "size": size, "sort": "desc"}
-    if subreddit:
-        params["subreddit"] = subreddit
-    if since:
-        params["since"] = since
-    if until:
-        params["until"] = until
-    resp = with_retries(requests.get, f"{PULLPUSH}/{kind}/", params=params, timeout=60)
+def _iso_to_epoch(iso: str | None) -> int | None:
+    if not iso:
+        return None
+    return int(datetime.fromisoformat(iso.replace("Z", "+00:00")).timestamp())
+
+
+def pullpush_search(kind: str, **params) -> list[dict]:
+    """kind in {'submission','comment'}. Pass q / subreddit / link_id / after / before."""
+    params.setdefault("size", config.PULLPUSH_PAGE_SIZE)
+    params.setdefault("sort", "desc")
+    clean = {k: v for k, v in params.items() if v is not None}
+    resp = with_retries(requests.get, f"{PULLPUSH}/{kind}/", params=clean, timeout=60,
+                        exceptions=(requests.RequestException,))
     resp.raise_for_status()
     return resp.json().get("data", [])
 
 
+def _relevant(text: str) -> bool:
+    """Filter loose full-text noise: require the exact 'ferrari luce' pairing,
+    or Ferrari mentioned together with an EV-context token (config.RELEVANCE_ANY)."""
+    t = (text or "").lower()
+    if "ferrari" not in t:
+        return False
+    if "ferrari luce" in t or "luce ferrari" in t:
+        return True
+    return any(tok in t for tok in config.RELEVANCE_ANY)
+
+
+def _flatten_pp_submission(d: dict, query: str) -> dict:
+    title = d.get("title", "") or ""
+    body = d.get("selftext", "") or ""
+    return {
+        "id": d.get("id"),
+        "subreddit": d.get("subreddit"),
+        "matched_query": query,
+        "author": d.get("author") or "[deleted]",
+        "title": title,
+        "selftext": body,
+        "text": (title + ". " + body).strip(),
+        "score": d.get("score", 0),
+        "upvote_ratio": d.get("upvote_ratio"),
+        "num_comments": d.get("num_comments", 0),
+        "created_at": _ts(d.get("created_utc")),
+        "permalink": d.get("permalink"),
+        "over_18": d.get("over_18"),
+        "link_flair_text": d.get("link_flair_text"),
+        "source": "reddit",
+    }
+
+
+def _paged(kind: str, base_params: dict, max_items: int) -> list[dict]:
+    """Backward-paginate PullPush by moving `before` to the oldest item each page."""
+    out, before = [], None
+    while len(out) < max_items:
+        data = pullpush_search(kind, before=before, **base_params)
+        if not data:
+            break
+        out.extend(data)
+        try:
+            before = min(int(x["created_utc"]) for x in data if x.get("created_utc")) - 1
+        except (ValueError, KeyError):
+            break
+        time.sleep(_PP_SLEEP)
+        if len(data) < config.PULLPUSH_PAGE_SIZE:
+            break
+    return out[:max_items]
+
+
+def pullpush_collect_submissions(queries=None, max_per_query=config.REDDIT_MAX_PER_QUERY,
+                                 since_iso=config.SINCE_ISO) -> pd.DataFrame:
+    queries = queries or config.REDDIT_QUERIES
+    after = _iso_to_epoch(since_iso)
+    rows: list[dict] = []
+    for q in queries:
+        try:
+            data = _paged("submission", {"q": q, "after": after}, max_per_query)
+            kept = [_flatten_pp_submission(d, q) for d in data
+                    if _relevant(f"{d.get('title','')} {d.get('selftext','')}")]
+            rows.extend(kept)
+            log.info("  PullPush submission '%s' -> %d kept / %d fetched", q, len(kept), len(data))
+        except Exception as e:  # noqa: BLE001
+            log.warning("  PullPush submission '%s' failed: %s", q, e)
+    rows = dedup(rows, key="id")
+    df = pd.DataFrame(rows)
+    if not df.empty:
+        df["created_at"] = pd.to_datetime(df["created_at"], errors="coerce", utc=True)
+    save_csv(df, "reddit_submissions.csv")
+    return df
+
+
+def pullpush_collect_comments(submission_ids, max_submissions=150,
+                              max_per_submission=300) -> pd.DataFrame:
+    rows: list[dict] = []
+    ids = list(submission_ids)[:max_submissions]
+    if len(submission_ids) > max_submissions:
+        log.warning("comments capped to %d/%d submissions (rate limit).",
+                    max_submissions, len(submission_ids))
+    for i, sid in enumerate(ids, 1):
+        try:
+            data = _paged("comment", {"link_id": sid}, max_per_submission)
+            for c in data:
+                rows.append({
+                    "id": c.get("id"),
+                    "submission_id": sid,
+                    "parent_id": c.get("parent_id"),
+                    "author": c.get("author") or "[deleted]",
+                    "body": c.get("body", "") or "",
+                    "score": c.get("score", 0),
+                    "created_at": _ts(c.get("created_utc")),
+                    "subreddit": c.get("subreddit"),
+                    "source": "reddit",
+                })
+        except Exception as e:  # noqa: BLE001
+            log.warning("  PullPush comments for %s failed: %s", sid, e)
+        if i % 25 == 0:
+            log.info("  comments: %d/%d submissions", i, len(ids))
+    df = pd.DataFrame(rows)
+    if not df.empty:
+        df["created_at"] = pd.to_datetime(df["created_at"], errors="coerce", utc=True)
+    save_csv(df, "reddit_comments.csv")
+    return df
+
+
+# ----------------------------------------------------------------------------
 def main() -> None:
-    reddit = get_reddit()
-    subs = collect_submissions(reddit)
-    log.info("Collected %d unique submissions.", len(subs))
-    if not subs.empty:
-        comments = collect_comments(reddit, subs["id"].dropna().tolist())
-        log.info("Collected %d comments.", len(comments))
+    load_env()
+    have_api = all(os.environ.get(k) for k in
+                   ("REDDIT_CLIENT_ID", "REDDIT_CLIENT_SECRET", "REDDIT_USER_AGENT"))
+    if have_api:
+        log.info("Reddit API creds found -> using PRAW.")
+        reddit = get_reddit()
+        subs = collect_submissions(reddit)
+        if not subs.empty:
+            collect_comments(reddit, subs["id"].dropna().tolist())
+    else:
+        log.info("No Reddit API creds -> using PullPush.io (no account needed).")
+        subs = pullpush_collect_submissions()
+        log.info("Collected %d unique submissions.", len(subs))
+        if not subs.empty:
+            comments = pullpush_collect_comments(subs["id"].dropna().tolist())
+            log.info("Collected %d comments.", len(comments))
 
 
 if __name__ == "__main__":

@@ -27,6 +27,16 @@ cp .env.example .env                # then fill in your credentials
 - **Reddit:** register a **script** app at <https://www.reddit.com/prefs/apps>.
   We use **read-only** mode — only `client_id`, `client_secret`, `user_agent`
   are required (no Reddit password).
+  - **No Reddit account / app creation blocked?** Leave the `REDDIT_*` vars unset
+    and the collector automatically uses **PullPush.io** (free, no key, no OAuth —
+    the Pushshift-successor public archive). `main()` auto-selects PRAW vs PullPush.
+  - PullPush full-text search is loose ("luce" = "light" in Italian), so a
+    relevance filter (`config.RELEVANCE_ANY` + the `ferrari luce` pairing) drops
+    off-topic hits; the collector logs `kept / fetched` so you can tune queries.
+  - **Behind a proxy?** `requests` already honours the standard `HTTPS_PROXY` /
+    `HTTP_PROXY` env vars, so `export HTTPS_PROXY=http://host:port` routes the
+    PullPush calls through it — no code change. (Proxies are for network routing,
+    *not* for evading Reddit's rate limits/blocks, which the ToS forbids.)
 
 ---
 
