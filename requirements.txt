@@ -1,0 +1,41 @@
+# ---- Web & Social Media Search and Analysis project: Ferrari Luce ----
+# Recommended: Python 3.11 in a virtualenv (matches Google Colab; some ML wheels
+# are not yet built for 3.14). See README.md.
+
+# Data collection (LAB 1 + LAB 2)
+atproto>=0.0.55          # Bluesky AT Protocol client
+praw>=7.7.1              # Reddit official API wrapper (read-only OAuth)
+requests>=2.31           # PullPush.io fallback + misc HTTP
+beautifulsoup4>=4.12     # LAB 1 parsing utilities (text cleaning helpers)
+python-dotenv>=1.0       # load credentials from .env
+
+# Core data handling
+pandas>=2.0
+numpy>=1.24
+pyarrow>=14.0            # parquet caching of raw pulls
+
+# Network analysis (LAB 3 + LAB 4)
+networkx>=3.2
+python-louvain>=0.16     # community_louvain (alt to nx.community.louvain_communities)
+
+# Content analysis (LAB 5 + LAB 6 + enrichments)
+nltk>=3.8
+vaderSentiment>=3.3.2
+afinn>=0.1
+NRCLex>=4.0
+transformers>=4.40
+torch>=2.2               # backend for transformers pipelines
+spacy>=3.7
+langdetect>=1.0.9
+bertopic>=0.16           # topic modelling (extension #2)
+gensim>=4.3              # LDA fallback for topic modelling
+scikit-learn>=1.3        # LogisticRegression baseline + CountVectorizer
+
+# Visualization
+matplotlib>=3.7
+seaborn>=0.13
+plotly>=5.18
+wordcloud>=1.9
+pyvis>=0.3.2             # interactive network html (Gephi-style hairball)
+
+# After install also run:  python -m spacy download en_core_web_sm
