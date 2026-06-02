@@ -43,7 +43,10 @@ def add_emotions(df: pd.DataFrame) -> pd.DataFrame:
         log.warning("NRCLex unavailable (%s); skipping emotions.", e)
         return df
     def emo(t):
-        freqs = NRCLex(t).affect_frequencies
+        try:  # NRCLex can choke on very long / pathological text — never fatal
+            freqs = NRCLex(str(t)[:2000]).affect_frequencies
+        except Exception:  # noqa: BLE001
+            return [0.0] * len(EMOTIONS)
         return [freqs.get(e, 0.0) for e in EMOTIONS]
     mat = df["text"].apply(emo).tolist()
     for i, e in enumerate(EMOTIONS):

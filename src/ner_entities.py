@@ -44,18 +44,23 @@ def extract_entities(df: pd.DataFrame) -> dict[str, list[tuple[str, str]]]:
     for doc_id, doc in zip(ids, nlp.pipe(texts, batch_size=64)):
         ents = []
         for ent in doc.ents:
-            if ent.label_ in KEEP_LABELS and len(ent.text.strip()) > 1:
-                ents.append((ent.text.strip(), ent.label_))
+            txt = ent.text.strip()
+            if ent.label_ in KEEP_LABELS and len(txt) > 2 and any(c.isalpha() for c in txt):
+                ents.append((txt, ent.label_))
         per_doc[doc_id] = ents
     return per_doc
 
 
 def frequency_table(per_doc) -> pd.DataFrame:
+    """Document frequency (count each entity once per doc) so a single spammy
+    post that repeats a token 100x can't dominate the ranking."""
     counter = Counter()
     labels = {}
     for ents in per_doc.values():
+        seen = {}
         for text, lab in ents:
-            key = text.lower()
+            seen.setdefault(text.lower(), lab)
+        for key, lab in seen.items():
             counter[key] += 1
             labels.setdefault(key, lab)
     rows = [{"entity": k, "label": labels[k], "count": c}
@@ -65,10 +70,12 @@ def frequency_table(per_doc) -> pd.DataFrame:
     return df
 
 
-def cooccurrence(per_doc, min_count: int = 2) -> pd.DataFrame:
+def cooccurrence(per_doc, min_count: int = 2, max_per_doc: int = 25) -> pd.DataFrame:
+    """Cap entities per document before pairing, so one entity-dense (often
+    spammy) doc can't blow up the combinatorics into hundreds of thousands of edges."""
     pair = Counter()
     for ents in per_doc.values():
-        uniq = sorted({t.lower() for t, _ in ents})
+        uniq = sorted({t.lower() for t, _ in ents})[:max_per_doc]
         for a, b in combinations(uniq, 2):
             pair[(a, b)] += 1
     rows = [{"source": a, "target": b, "weight": w}
