@@ -58,11 +58,26 @@ def add_emotions(df: pd.DataFrame) -> pd.DataFrame:
 _PIPE_CACHE: dict = {}
 
 
+def _device() -> int:
+    """0 = first CUDA GPU (Colab "Runtime -> GPU"), -1 = CPU. Cached by caller."""
+    try:
+        import torch
+        if torch.cuda.is_available():
+            return 0
+    except Exception:  # noqa: BLE001 - torch missing / driver issue -> CPU
+        pass
+    return -1
+
+
 def get_pipeline(task: str, model: str):
     key = (task, model)
     if key not in _PIPE_CACHE:
         from transformers import pipeline
-        _PIPE_CACHE[key] = pipeline(task, model=model, truncation=True, max_length=512)
+        dev = _device()
+        _PIPE_CACHE[key] = pipeline(task, model=model, truncation=True,
+                                    max_length=512, device=dev)
+        log.info("pipeline '%s' (%s) on %s", task, model,
+                 "GPU" if dev == 0 else "CPU")
     return _PIPE_CACHE[key]
 
 

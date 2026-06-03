@@ -7,11 +7,22 @@ Run:  python -m src.collect_bluesky
 Outputs:  data/processed/posts_bluesky.csv , data/processed/edges_follows.csv
 """
 from __future__ import annotations
+import os
 import time
 import pandas as pd
 
 from . import config
-from .utils import log, require_env, with_retries, save_csv, dedup
+from .utils import log, require_env, with_retries, save_csv, dedup, load_env
+
+
+def have_credentials() -> bool:
+    """True if both Bluesky env vars are set (so collection can run).
+
+    Checks env only — does NOT import `atproto` — so a no-credentials Colab
+    run can skip Bluesky cleanly even if the client library isn't installed.
+    """
+    load_env()
+    return all(os.environ.get(k) for k in ("BLUESKY_HANDLE", "BLUESKY_APP_PASSWORD"))
 
 
 def get_client():
@@ -143,6 +154,13 @@ def collect_follow_edges(accounts: list[str] | None = None) -> pd.DataFrame:
 
 
 def main() -> None:
+    if not have_credentials():
+        log.warning(
+            "No Bluesky credentials (BLUESKY_HANDLE / BLUESKY_APP_PASSWORD) -> "
+            "skipping Bluesky. Reddit/PullPush still runs, so the pipeline "
+            "completes on Reddit data alone. Set both to include Bluesky."
+        )
+        return
     df = collect_posts()
     log.info("Collected %d unique Bluesky posts.", len(df))
     collect_follow_edges()
