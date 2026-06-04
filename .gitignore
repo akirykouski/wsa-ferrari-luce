@@ -13,5 +13,12 @@ data/processed/*
 figures/*
 !**/.gitkeep
 
+# ...but DO commit the collected raw dataset (the "data part") so the Colab
+# notebook can load it directly instead of re-scraping. Derived analysis CSVs
+# stay ignored — they are regenerated from these inputs.
+!data/processed/reddit_submissions.csv
+!data/processed/reddit_comments.csv
+!data/processed/posts_bluesky.csv
+
 # pyvis dumps bundled JS/CSS next to generated html
 lib/
