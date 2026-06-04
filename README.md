@@ -28,14 +28,17 @@ cp .env.example .env                # then fill in your credentials
   We use **read-only** mode — only `client_id`, `client_secret`, `user_agent`
   are required (no Reddit password).
   - **No Reddit account / app creation blocked?** Leave the `REDDIT_*` vars unset
-    and the collector automatically uses **PullPush.io** (free, no key, no OAuth —
-    the Pushshift-successor public archive). `main()` auto-selects PRAW vs PullPush.
-  - PullPush full-text search is loose ("luce" = "light" in Italian), so a
+    and the collector falls back to a free, **no-account / no-key** archive:
+    **Arctic-Shift** (the actively-maintained Pushshift mirror) first, then
+    **PullPush.io** if Arctic-Shift is unavailable. `main()` auto-selects
+    PRAW → Arctic-Shift → PullPush. (Reddit's own `*.json` endpoints are now
+    blocked for unauthenticated clients, so these mirrors are the no-account path.)
+  - Archive full-text search is loose ("luce" = "light" in Italian), so a
     relevance filter (`config.RELEVANCE_ANY` + the `ferrari luce` pairing) drops
     off-topic hits; the collector logs `kept / fetched` so you can tune queries.
   - **Behind a proxy?** `requests` already honours the standard `HTTPS_PROXY` /
     `HTTP_PROXY` env vars, so `export HTTPS_PROXY=http://host:port` routes the
-    PullPush calls through it — no code change. (Proxies are for network routing,
+    archive calls through it — no code change. (Proxies are for network routing,
     *not* for evading Reddit's rate limits/blocks, which the ToS forbids.)
 
 ---
@@ -66,7 +69,7 @@ run you can re-run analysis freely. Outputs are written to `data/processed/`
 
 - **LAB 1** (scraping/`re`) → text cleaning in `utils.py` (no news scraped).
 - **LAB 2** (atproto/PRAW) → `collect_bluesky.py`, `collect_reddit.py` (PRAW
-  read-only primary; PullPush.io helpers as fallback).
+  read-only primary; Arctic-Shift then PullPush.io as no-account fallbacks).
 - **LAB 3** (centrality) → `build_graph.py` — directed interaction graph,
   in/out-degree, betweenness, closeness, PageRank, eigenvector (**RQ1**).
 - **LAB 4** (communities) → `communities.py` — Louvain + greedy modularity,

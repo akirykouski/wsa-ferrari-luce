@@ -1,10 +1,14 @@
-"""LAB 2 — Reddit collector. Two interchangeable paths, same output schema:
+"""LAB 2 — Reddit collector. Three interchangeable paths, same output schema:
 
-  PRAW   — read-only OAuth (needs a Reddit script app: client id + secret).
-  PullPush.io — free, **NO ACCOUNT / NO KEY**, public Pushshift-successor API.
+  PRAW         — read-only OAuth (needs a Reddit script app: client id + secret).
+  Arctic-Shift — free, **NO ACCOUNT / NO KEY**, actively-maintained Pushshift
+                 mirror (primary no-account path; more reliable than PullPush).
+  PullPush.io  — free, **NO ACCOUNT / NO KEY**, Pushshift-successor (used as a
+                 last-resort fallback if Arctic-Shift is unavailable).
 
-`main()` auto-selects: if Reddit API creds are present it uses PRAW, otherwise it
-falls back to PullPush so the project works even without a Reddit developer app.
+`main()` auto-selects: if Reddit API creds are present it uses PRAW; otherwise it
+uses Arctic-Shift, falling back to PullPush, so the project works with no Reddit
+developer app at all.
 
 Key gotchas handled here:
   * comment trees are lazy  -> submission.comments.replace_more(limit=0)  (PRAW)
@@ -260,6 +264,111 @@ def pullpush_collect_comments(submission_ids, max_submissions=150,
 
 
 # ----------------------------------------------------------------------------
+# Arctic-Shift — free, NO ACCOUNT / NO KEY. Actively-maintained Pushshift mirror
+# with the same record schema, so the PullPush flatteners are reused. This is the
+# primary no-account path (Reddit's own .json is now blocked for unauthenticated
+# clients, and PullPush is frequently overloaded). Docs: arctic-shift.photon-reddit.com
+#   * posts:    /api/posts/search?subreddit=&query=&after=&before=&limit=&sort=
+#   * comments: /api/comments/search?link_id=&after=&before=&limit=&sort=
+#     (note: comment search has no free-text `query`; we fetch per-submission)
+# ----------------------------------------------------------------------------
+ARCTIC = "https://arctic-shift.photon-reddit.com/api"
+_AS_HEADERS = {"User-Agent": "wsa-ferrari-luce/0.1 (research; no-account collector)"}
+_AS_SLEEP = 1.0          # polite gap between requests
+_AS_PAGE = 100           # API max per page
+
+
+def arctic_search(kind: str, **params) -> list[dict]:
+    """kind in {'posts','comments'}. Returns raw Pushshift-style records."""
+    params.setdefault("limit", _AS_PAGE)
+    clean = {k: v for k, v in params.items() if v is not None}
+    resp = with_retries(requests.get, f"{ARCTIC}/{kind}/search", params=clean,
+                        headers=_AS_HEADERS, timeout=60,
+                        exceptions=(requests.RequestException,))
+    resp.raise_for_status()
+    return resp.json().get("data") or []
+
+
+def _arctic_paged(kind: str, base_params: dict, max_items: int) -> list[dict]:
+    """Backward-paginate by moving `before` just past the oldest item each page."""
+    out: list[dict] = []
+    before = base_params.get("before")
+    while len(out) < max_items:
+        page = arctic_search(kind, sort="desc",
+                             **{**base_params, "before": before, "limit": _AS_PAGE})
+        if not page:
+            break
+        out.extend(page)
+        try:
+            before = min(int(x["created_utc"]) for x in page if x.get("created_utc")) - 1
+        except (ValueError, KeyError):
+            break
+        time.sleep(_AS_SLEEP)
+        if len(page) < _AS_PAGE:
+            break
+    return out[:max_items]
+
+
+def arctic_collect_submissions(queries=None, subreddits=None,
+                               max_per_query=config.REDDIT_MAX_PER_QUERY,
+                               since_iso=config.SINCE_ISO) -> pd.DataFrame:
+    queries = queries or config.REDDIT_QUERIES
+    subreddits = subreddits or config.SUBREDDITS
+    after = _iso_to_epoch(since_iso)
+    rows: list[dict] = []
+    for sub in subreddits:
+        for q in queries:
+            try:
+                data = _arctic_paged("posts", {"subreddit": sub, "query": q,
+                                               "after": after}, max_per_query)
+                kept = [_flatten_pp_submission(d, q) for d in data
+                        if _relevant(f"{d.get('title','')} {d.get('selftext','')}")]
+                rows.extend(kept)
+                log.info("  Arctic r/%-16s %-22s -> %d kept / %d fetched",
+                         sub, q, len(kept), len(data))
+            except Exception as e:  # noqa: BLE001
+                log.warning("  Arctic r/%s '%s' failed: %s", sub, q, e)
+    rows = dedup(rows, key="id")
+    df = pd.DataFrame(rows)
+    if not df.empty:
+        df["created_at"] = pd.to_datetime(df["created_at"], errors="coerce", utc=True)
+    save_csv(df, "reddit_submissions.csv")
+    return df
+
+
+def arctic_collect_comments(submission_ids, max_submissions=400,
+                            max_per_submission=400) -> pd.DataFrame:
+    rows: list[dict] = []
+    ids = list(submission_ids)[:max_submissions]
+    if len(submission_ids) > max_submissions:
+        log.warning("comments capped to %d/%d submissions.", max_submissions, len(submission_ids))
+    for i, sid in enumerate(ids, 1):
+        try:
+            data = _arctic_paged("comments", {"link_id": sid}, max_per_submission)
+            for c in data:
+                rows.append({
+                    "id": c.get("id"),
+                    "submission_id": sid,
+                    "parent_id": c.get("parent_id"),
+                    "author": c.get("author") or "[deleted]",
+                    "body": c.get("body", "") or "",
+                    "score": c.get("score", 0),
+                    "created_at": _ts(c.get("created_utc")),
+                    "subreddit": c.get("subreddit"),
+                    "source": "reddit",
+                })
+        except Exception as e:  # noqa: BLE001
+            log.warning("  Arctic comments for %s failed: %s", sid, e)
+        if i % 25 == 0:
+            log.info("  comments: %d/%d submissions", i, len(ids))
+    df = pd.DataFrame(rows)
+    if not df.empty:
+        df["created_at"] = pd.to_datetime(df["created_at"], errors="coerce", utc=True)
+    save_csv(df, "reddit_comments.csv")
+    return df
+
+
+# ----------------------------------------------------------------------------
 def main() -> None:
     load_env()
     have_api = all(os.environ.get(k) for k in
@@ -270,13 +379,24 @@ def main() -> None:
         subs = collect_submissions(reddit)
         if not subs.empty:
             collect_comments(reddit, subs["id"].dropna().tolist())
-    else:
-        log.info("No Reddit API creds -> using PullPush.io (no account needed).")
+        return
+
+    # No account: Arctic-Shift first (reliable), PullPush as fallback.
+    log.info("No Reddit API creds -> using Arctic-Shift (no account needed).")
+    collect_comments_for = arctic_collect_comments
+    try:
+        subs = arctic_collect_submissions()
+    except Exception as e:  # noqa: BLE001
+        log.warning("Arctic-Shift failed (%s); trying PullPush.io.", e)
+        subs = pd.DataFrame()
+    if subs.empty:
+        log.warning("Arctic-Shift returned no submissions; falling back to PullPush.io.")
         subs = pullpush_collect_submissions()
-        log.info("Collected %d unique submissions.", len(subs))
-        if not subs.empty:
-            comments = pullpush_collect_comments(subs["id"].dropna().tolist())
-            log.info("Collected %d comments.", len(comments))
+        collect_comments_for = pullpush_collect_comments
+    log.info("Collected %d unique submissions.", len(subs))
+    if not subs.empty:
+        comments = collect_comments_for(subs["id"].dropna().tolist())
+        log.info("Collected %d comments.", len(comments))
 
 
 if __name__ == "__main__":
