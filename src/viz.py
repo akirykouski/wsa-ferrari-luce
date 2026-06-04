@@ -10,6 +10,12 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
 
+try:  # seaborn gives the charts a cleaner default look (optional)
+    import seaborn as sns
+    sns.set_theme(style="whitegrid", context="notebook")
+except Exception:  # noqa: BLE001
+    pass
+
 from . import config
 from .utils import log, load_csv
 
@@ -132,32 +138,38 @@ def entity_frequency(n: int = 20):
     _save(fig, "entity_frequency.png")
 
 
-def community_network():
-    """Interactive hairball coloured by community (pyvis -> html)."""
-    try:
-        import networkx as nx
-        from pyvis.network import Network
-    except Exception:
-        return
+def community_network(top_n: int = 200):
+    """Static interaction network of the most central accounts, coloured by
+    community and sized by PageRank (matplotlib + networkx spring layout).
+
+    The full graph is an 8k-node hairball, so we draw the subgraph induced by
+    the top-N accounts by PageRank, which keeps the figure legible.
+    """
+    import networkx as nx
     G = nx.read_graphml(config.DATA_PROCESSED / "graph.graphml")
+    if G.number_of_nodes() == 0:
+        return
     comm = load_csv("nodes_communities.csv").set_index("node")["community_louvain"].to_dict()
     cent = load_csv("nodes_centrality.csv").set_index("node")["pagerank"].to_dict()
-    # cdn_resources="remote" -> pyvis links JS/CSS from a CDN instead of dumping
-    # a local lib/ folder next to the html.
-    net = Network(height="750px", width="100%", bgcolor="#111", font_color="white",
-                  cdn_resources="remote")
-    palette = ["#e6194B", "#3cb44b", "#4363d8", "#f58231", "#911eb4",
-               "#42d4f4", "#f032e6", "#bfef45", "#fabed4", "#469990"]
-    for node in G.nodes:
-        c = comm.get(node, 0) or 0
-        net.add_node(node, label=str(node),
-                     color=palette[int(c) % len(palette)],
-                     size=8 + 600 * float(cent.get(node, 0) or 0))
-    for u, v, d in G.edges(data=True):
-        net.add_edge(u, v, value=d.get("weight", 1))
-    out = config.FIGURES / "community_network.html"
-    net.write_html(str(out))
-    log.info("interactive network -> %s", out)
+
+    top = sorted(G.nodes, key=lambda n: cent.get(n, 0) or 0, reverse=True)[:top_n]
+    H = G.subgraph(top).to_undirected()
+    pos = nx.spring_layout(H, seed=42, k=0.3)
+
+    communities = [int(comm.get(n, 0) or 0) for n in H.nodes]
+    sizes = [40 + 4000 * float(cent.get(n, 0) or 0) for n in H.nodes]
+
+    fig, ax = plt.subplots(figsize=(11, 8.5))
+    nx.draw_networkx_edges(H, pos, ax=ax, alpha=0.15, width=0.6, edge_color="#999")
+    nodes = nx.draw_networkx_nodes(H, pos, ax=ax, node_color=communities, cmap="tab20",
+                                   node_size=sizes, linewidths=0.3, edgecolors="white")
+    # label only the dozen most central accounts so it stays readable
+    top_labels = sorted(H.nodes, key=lambda n: cent.get(n, 0) or 0, reverse=True)[:12]
+    nx.draw_networkx_labels(H, pos, labels={n: n for n in top_labels}, ax=ax, font_size=7)
+    ax.set_title(f"Interaction network — top {H.number_of_nodes()} accounts by PageRank "
+                 f"(colour = community)")
+    ax.axis("off")
+    _save(fig, "community_network.png")
 
 
 def main() -> None:

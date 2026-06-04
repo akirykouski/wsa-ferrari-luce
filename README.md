@@ -18,9 +18,12 @@ See [`MEGAPLAN.md`](MEGAPLAN.md) for the full objectives, research questions, an
 cd WSA_FerrariLuce
 python3.11 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-python scripts/00_setup.py          # NLTK data + spaCy en_core_web_sm
-cp .env.example .env                # then fill in your credentials
+python -m spacy download en_core_web_sm   # NLTK data downloads on first use
+cp .env.example .env                       # optional — collectors run with no creds
 ```
+
+The pipeline lives entirely in `src/` (no separate `scripts/` wrappers); run each
+stage as a module, or open `WSA_FerrariLuce_Colab.ipynb`, which imports `src/` directly.
 
 ### Credentials (`.env`)
 - **Bluesky:** create an *App Password* (bsky.app → Settings → App Passwords).
@@ -45,23 +48,24 @@ cp .env.example .env                # then fill in your credentials
 
 ## 2. Run order
 
-Each stage can be run as a script **or** as a module (`python -m src.<name>`).
+Each stage is a module under `src/` — run with `python -m src.<name>` (or call its
+`main()` from the notebook).
 
 | # | Command | Lab | Produces |
 |---|---|---|---|
-| 00 | `python scripts/00_setup.py` | — | NLTK + spaCy resources |
-| 01 | `python scripts/01_collect_bluesky.py` | 1,2 | `posts_bluesky.csv`, `edges_follows.csv` |
-| 02 | `python scripts/02_collect_reddit.py` | 1,2 | `reddit_submissions.csv`, `reddit_comments.csv` |
-| 03 | `python scripts/03_build_graph.py` | 3 | `graph.graphml`, `nodes_centrality.csv`, `graph_summary.txt` |
-| 04 | `python scripts/04_communities.py` | 4 | `nodes_communities.csv`, `communities_summary.txt` |
-| 05 | `python scripts/05_sentiment_emotion.py` | 5 | `documents_sentiment.csv`, `aspect_sentiment.csv`, `sentiment_timeline.csv` |
-| 06 | `python scripts/06_enrich.py` | + | `documents_enriched.csv`, `topics_keywords.csv`, `language_sentiment.csv` |
-| 07 | `python scripts/07_ner.py` | 6 | `entity_frequency.csv`, `entity_cooccurrence.csv`, `entity_sentiment.csv` |
-| 08 | `python scripts/08_visualize.py` | — | all figures in `figures/` |
+| 01 | `python -m src.collect_bluesky` | 1,2 | `posts_bluesky.csv`, `edges_follows.csv` |
+| 02 | `python -m src.collect_reddit` | 1,2 | `reddit_submissions.csv`, `reddit_comments.csv` |
+| 03 | `python -m src.build_graph` | 3 | `graph.graphml`, `nodes_centrality.csv`, `graph_summary.txt` |
+| 04 | `python -m src.communities` | 4 | `nodes_communities.csv`, `communities_summary.txt` |
+| 05 | `python -m src.content_sentiment` | 5 | `documents_sentiment.csv`, `aspect_sentiment.csv`, `sentiment_timeline.csv` |
+| 06 | `python -m src.content_enrich` | + | `documents_enriched.csv`, `topics_keywords.csv`, `language_sentiment.csv` |
+| 07 | `python -m src.ner_entities` | 6 | `entity_frequency.csv`, `entity_cooccurrence.csv`, `entity_sentiment.csv` |
+| 08 | `python -m src.viz` | — | all figures (`.png`) in `figures/` |
 
 Stages 03–08 read the CSVs in `data/processed/`, so once collection (01–02) has
 run you can re-run analysis freely. Outputs are written to `data/processed/`
-(tables) and `figures/` (charts + `community_network.html`).
+(tables) and `figures/` (all charts as `.png`, including the community-coloured
+interaction network).
 
 ---
 
