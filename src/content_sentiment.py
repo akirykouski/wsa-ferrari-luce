@@ -42,15 +42,33 @@ def add_emotions(df: pd.DataFrame) -> pd.DataFrame:
     except Exception as e:  # noqa: BLE001
         log.warning("NRCLex unavailable (%s); skipping emotions.", e)
         return df
+    # NRCLex >=4 changed its API: text is no longer a constructor argument (that
+    # slot is now a lexicon-file path) and `affect_frequencies` only exists after
+    # `load_raw_text()`. The old `NRCLex(text).affect_frequencies` therefore raised
+    # AttributeError and silently produced all-zero emotion columns. Detect the
+    # API once, reuse a single analyzer, and fall back to the legacy form.
+    try:
+        analyzer = NRCLex()
+        new_api = hasattr(analyzer, "load_raw_text")
+    except Exception:  # noqa: BLE001 - legacy NRCLex() may require text
+        analyzer, new_api = None, False
+
     def emo(t):
+        text = str(t)[:2000]
         try:  # NRCLex can choke on very long / pathological text — never fatal
-            freqs = NRCLex(str(t)[:2000]).affect_frequencies
+            if new_api:
+                analyzer.load_raw_text(text)  # needs TextBlob
+                freqs = analyzer.affect_frequencies
+            else:
+                freqs = NRCLex(text).affect_frequencies
         except Exception:  # noqa: BLE001
             return [0.0] * len(EMOTIONS)
         return [freqs.get(e, 0.0) for e in EMOTIONS]
     mat = df["text"].apply(emo).tolist()
     for i, e in enumerate(EMOTIONS):
         df[f"emo_{e}"] = [row[i] for row in mat]
+    matched = sum(1 for row in mat if any(row))
+    log.info("NRC emotions: %d/%d docs matched the lexicon", matched, len(mat))
     return df
 
 

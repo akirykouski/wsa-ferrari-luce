@@ -14,7 +14,7 @@ import networkx as nx
 import pandas as pd
 
 from . import config
-from .utils import log, load_csv, save_csv
+from .utils import log, load_csv, save_csv, is_bot
 
 GRAPH_PATH = config.DATA_PROCESSED / "graph.graphml"
 
@@ -26,7 +26,7 @@ def _add_edge(G: nx.DiGraph, u, v, relation: str, platform: str) -> None:
     if pd.isna(u) or pd.isna(v):   # NaN from empty CSV fields / missing authors
         return
     u, v = str(u).strip(), str(v).strip()
-    if u == v or u in _BAD_NODES or v in _BAD_NODES:
+    if u == v or u in _BAD_NODES or v in _BAD_NODES or is_bot(u) or is_bot(v):
         return
     if G.has_edge(u, v):
         G[u][v]["weight"] += 1

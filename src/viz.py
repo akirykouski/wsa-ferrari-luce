@@ -59,9 +59,14 @@ def emotions():
         return
     means = df[emo_cols].mean().sort_values(ascending=False)
     means.index = [c.replace("emo_", "") for c in means.index]
+    if means.sum() == 0:  # all-zero -> NRCLex didn't populate; don't emit a blank chart
+        log.warning("emotions: all emo_ columns are zero; skipping (check add_emotions/NRCLex).")
+        return
     fig, ax = plt.subplots(figsize=(6, 4))
     means.plot(kind="bar", ax=ax, color="#9467bd")
     ax.set_title("Mean NRC emotion intensity")
+    ax.set_ylabel("mean affect frequency")
+    ax.tick_params(axis="x", rotation=45)
     _save(fig, "emotions.png")
 
 
@@ -86,36 +91,111 @@ def aspect_sentiment():
 
 def timeline():
     tl = load_csv("sentiment_timeline.csv")
-    tl["created_at"] = pd.to_datetime(tl["created_at"], errors="coerce")
-    fig, ax1 = plt.subplots(figsize=(9, 4))
-    ax1.bar(tl["created_at"], tl["n_docs"], color="#aec7e8", label="volume")
-    ax1.set_ylabel("posts / day", color="#1f77b4")
+    tl["created_at"] = pd.to_datetime(tl["created_at"], errors="coerce", utc=True)
+    tl = tl.dropna(subset=["created_at"]).set_index("created_at")
+    # Daily bins are too sparse (most days are empty) -> aggregate to weekly.
+    # Weekly mean sentiment is the post-weighted mean: daily mean * count = daily
+    # sum, so sum(mean*n)/sum(n) recovers the true weekly mean.
+    tl["sum_compound"] = tl["mean_compound"].fillna(0) * tl["n_docs"]
+    wk = tl.resample("W").agg(n_docs=("n_docs", "sum"),
+                              sum_compound=("sum_compound", "sum"))
+    wk["mean_compound"] = (wk["sum_compound"] / wk["n_docs"]).where(wk["n_docs"] > 0)
+    active = wk[wk["n_docs"] > 0]  # line only across weeks that actually have posts
+
+    fig, ax1 = plt.subplots(figsize=(11, 5))
+    bars = ax1.bar(wk.index, wk["n_docs"], width=5, color="#aec7e8",
+                   edgecolor="#7fa8d0", label="posts per week")
+    ax1.set_ylabel("posts per week", color="#1f77b4")
+    ax1.tick_params(axis="y", labelcolor="#1f77b4")
+
     ax2 = ax1.twinx()
-    ax2.plot(tl["created_at"], tl["mean_compound"], color="#d62728", marker="o", label="mean sentiment")
+    line, = ax2.plot(active.index, active["mean_compound"], color="#d62728",
+                     marker="o", ms=4, lw=1.8, label="mean VADER compound")
     ax2.axhline(0, color="grey", lw=0.6, ls="--")
     ax2.set_ylabel("mean VADER compound", color="#d62728")
+    ax2.tick_params(axis="y", labelcolor="#d62728")
+    ax2.set_ylim(-1, 1)
+
+    # Event markers (single shared legend entry).
+    evt_handle = None
     for date, lbl in config.EVENT_DATES:
         try:
-            ax1.axvline(pd.Timestamp(date, tz="UTC"), color="black", lw=0.8, ls=":")
+            evt_handle = ax1.axvline(pd.Timestamp(date, tz="UTC"),
+                                     color="black", lw=0.9, ls=":")
         except Exception:
             pass
-    ax1.set_title("Volume & sentiment over time")
+
+    handles = [bars, line] + ([evt_handle] if evt_handle is not None else [])
+    labels = ["posts per week", "mean VADER compound"] + (["key events"] if evt_handle else [])
+    ax1.legend(handles, labels, loc="upper left", framealpha=0.9)
+    ax1.set_title("Volume & sentiment over time (weekly)")
     _save(fig, "sentiment_timeline.png")
 
 
 def wordclouds():
+    """One cloud per sentiment, sized by how *distinctive* each term is to that
+    class rather than by raw frequency.
+
+    Raw-frequency clouds are dominated by words common to every class ("people",
+    "think", "design"...), which carry no contrast. Instead we TF-IDF the whole
+    corpus (uni- + bi-grams) so corpus-wide words are downweighted, drop near-
+    universal terms via max_df, then rank each class by its mean TF-IDF weight.
+    """
     try:
-        from wordcloud import WordCloud
+        from wordcloud import WordCloud, STOPWORDS
     except Exception:
         return
     src = "documents_enriched.csv" if (config.DATA_PROCESSED / "documents_enriched.csv").exists() else "documents_sentiment.csv"
     df = load_csv(src)
     col = next((c for c in ("sentiment_corrected", "transformer_label", "vader_label") if c in df.columns), None)
-    for sentiment in ("negative", "positive"):
-        text = " ".join(df.loc[df[col] == sentiment, "text"].astype(str))
+    if col is None:
+        return
+    df = df[["text", col]].dropna()
+    df["text"] = df["text"].astype(str)
+    sentiments = ("negative", "neutral", "positive")
+    stop = set(STOPWORDS) | config.WORDCLOUD_STOPWORDS
+
+    try:
+        import numpy as np
+        from sklearn.feature_extraction.text import TfidfVectorizer, ENGLISH_STOP_WORDS
+    except Exception:  # noqa: BLE001 - fall back to plain frequency clouds below
+        TfidfVectorizer = None
+
+    if TfidfVectorizer is not None:
+        vec = TfidfVectorizer(stop_words=list(stop | set(ENGLISH_STOP_WORDS)),
+                              ngram_range=(1, 2), min_df=5, max_df=0.4,
+                              sublinear_tf=True)
+        try:
+            X = vec.fit_transform(df["text"])
+        except ValueError:
+            X = None
+        if X is not None:
+            vocab = vec.get_feature_names_out()
+            for sentiment in sentiments:
+                mask = (df[col] == sentiment).to_numpy()
+                if mask.sum() < 5:
+                    continue
+                weights = np.asarray(X[mask].mean(axis=0)).ravel()
+                top = weights.argsort()[::-1][:120]
+                freqs = {vocab[i]: float(weights[i]) for i in top if weights[i] > 0}
+                if not freqs:
+                    continue
+                wc = WordCloud(width=800, height=400, background_color="white",
+                               collocations=False, prefer_horizontal=0.9
+                               ).generate_from_frequencies(freqs)
+                fig, ax = plt.subplots(figsize=(8, 4))
+                ax.imshow(wc); ax.axis("off")
+                ax.set_title(f"{sentiment} posts — distinctive terms")
+                _save(fig, f"wordcloud_{sentiment}.png")
+            return
+
+    # Fallback (sklearn unavailable): plain frequency clouds.
+    for sentiment in sentiments:
+        text = " ".join(df.loc[df[col] == sentiment, "text"])
         if len(text) < 50:
             continue
-        wc = WordCloud(width=800, height=400, background_color="white").generate(text)
+        wc = WordCloud(width=800, height=400, background_color="white",
+                       stopwords=stop, collocations=False).generate(text)
         fig, ax = plt.subplots(figsize=(8, 4))
         ax.imshow(wc); ax.axis("off"); ax.set_title(f"{sentiment} posts")
         _save(fig, f"wordcloud_{sentiment}.png")

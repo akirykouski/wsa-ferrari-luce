@@ -150,6 +150,15 @@ def extract_hashtags(text: str) -> list[str]:
     return [h.lower() for h in HASHTAG_RE.findall(text or "")]
 
 
+def is_bot(name) -> bool:
+    """True for automated / official accounts (mod bots, karma/reminder bots,
+    *-ModTeam). Used to exclude them from both the network and content layers."""
+    if not isinstance(name, str):
+        return False
+    n = name.strip().lower()
+    return bool(n) and (n in config.BOT_ACCOUNTS or n.endswith(config.BOT_SUFFIXES))
+
+
 # ----------------------------------------------------------------------------
 # Language detection (RQ8)
 # ----------------------------------------------------------------------------

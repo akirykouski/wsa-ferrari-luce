@@ -6,7 +6,7 @@ Columns: doc_id, source, author, created_at, text, lang
 from __future__ import annotations
 import pandas as pd
 
-from .utils import log, load_csv, clean_basic, detect_lang
+from .utils import log, load_csv, clean_basic, detect_lang, is_bot
 
 
 def _first_lang(langs: str) -> str:
@@ -67,6 +67,11 @@ def load_documents() -> pd.DataFrame:
     df = pd.concat(frames, ignore_index=True)
     df["text"] = df["text"].apply(clean_basic)
     df = df[df["text"].str.len() > 0].reset_index(drop=True)
+    # Drop automated / official accounts (mod bots etc.) — not real participants.
+    n_before = len(df)
+    df = df[~df["author"].map(is_bot)].reset_index(drop=True)
+    if n_before - len(df):
+        log.info("dropped %d bot-authored documents", n_before - len(df))
     # fill missing language via langdetect (RQ8)
     mask = df["lang"].fillna("") == ""
     df.loc[mask, "lang"] = df.loc[mask, "text"].apply(detect_lang)

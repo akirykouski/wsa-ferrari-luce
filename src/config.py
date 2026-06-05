@@ -116,6 +116,44 @@ ASPECTS: dict[str, list[str]] = {
     ],
 }
 
+# Community detection: ignore micro-communities below this size (LAB 4). Members
+# of any community smaller than this are merged into a single "other" bucket so
+# the discourse-camp summary and the network figure stay meaningful.
+MIN_COMMUNITY_SIZE = 5
+
+# Wordcloud stopwords: domain terms that appear in (almost) every post and so
+# carry no signal about *what* people say (the car's name, generic EV/car words),
+# common conversational filler not caught by the standard English list, plus a few
+# HTML/URL artefacts. Combined with the analytic stopword list in viz.wordclouds.
+WORDCLOUD_STOPWORDS = {
+    # domain terms (near-universal in this corpus -> uninformative)
+    "ferrari", "ferraris", "ferrari's", "luce", "luce's", "ferrariluce",
+    "car", "cars", "ev", "evs", "electric", "vehicle", "vehicles", "auto",
+    # conversational filler
+    "like", "just", "get", "got", "getting", "would", "could", "should",
+    "one", "even", "really", "make", "makes", "made", "making", "think",
+    "thinks", "want", "wants", "know", "knows", "thing", "things", "way",
+    "ways", "going", "say", "says", "said", "people", "much", "lot", "lots",
+    "still", "good", "well", "yeah", "actually", "something", "someone",
+    "everything", "anything", "nothing", "also", "maybe", "probably", "pretty",
+    "doesn't", "don't", "isn't", "i'm", "i've", "it's", "they're", "that's",
+    # contraction fragments left after apostrophe-splitting (doesn't -> doesn, t)
+    "doesn", "don", "isn", "didn", "wasn", "weren", "aren", "couldn", "wouldn",
+    "shouldn", "hasn", "haven", "hadn", "won", "mustn", "shan", "ve", "ll", "re",
+    "st", "im", "id", "dont", "didnt", "doesnt", "isnt", "youre",
+    # HTML / URL artefacts + Reddit moderation / embed placeholders
+    "amp", "gt", "lt", "http", "https", "www", "com",
+    "removed", "deleted", "giphy", "gif", "gifs", "edit", "edited", "nbsp",
+}
+
+# Automated / official accounts (not real participants): mod bots, karma/reminder
+# bots, and subreddit mod-team accounts. Matched case-insensitively against exact
+# handles; any handle ending in a BOT_SUFFIXES entry (e.g. "cars-ModTeam") also
+# counts. NB: deliberately no generic "bot" substring — it false-matches real
+# users like "BothnianBhai". See utils.is_bot.
+BOT_ACCOUNTS = {"automoderator", "visualmod", "cc_dispenser", "ai-moderator", "remindmebot"}
+BOT_SUFFIXES = ("-modteam",)
+
 # Comparison entities we expect to recur (used to sanity-check NER output)
 WATCH_ENTITIES = [
     "Nissan Leaf", "Tesla", "Apple", "Jony Ive", "LoveFrom", "Benedetto Vigna",
