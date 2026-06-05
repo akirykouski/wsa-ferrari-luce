@@ -29,7 +29,7 @@ BLUESKY_QUERIES = [
     "#FerrariLuce",
     "Ferrari Luce ugly",          # surface the backlash explicitly
 ]
-
+#
 REDDIT_QUERIES = [
     "Ferrari Luce",
     "Ferrari Elettrica",
