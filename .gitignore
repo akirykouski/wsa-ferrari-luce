@@ -10,7 +10,6 @@ __pycache__/
 # data & outputs (keep folder structure, ignore contents)
 data/raw/*
 data/processed/*
-figures/*
 !**/.gitkeep
 
 # ...but DO commit the collected raw dataset (the "data part") so the Colab
