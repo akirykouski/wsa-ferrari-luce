@@ -28,6 +28,7 @@ def load_documents() -> pd.DataFrame:
                 "created_at": b["created_at"],
                 "text": b["text"].fillna(""),
                 "lang": b["langs"].apply(_first_lang),
+                "subreddit": "",   # bluesky has no subreddit
             }))
     except FileNotFoundError:
         pass
@@ -42,6 +43,7 @@ def load_documents() -> pd.DataFrame:
                 "created_at": s["created_at"],
                 "text": s["text"].fillna(""),
                 "lang": "",
+                "subreddit": s.get("subreddit", ""),
             }))
     except FileNotFoundError:
         pass
@@ -56,15 +58,17 @@ def load_documents() -> pd.DataFrame:
                 "created_at": c["created_at"],
                 "text": c["body"].fillna(""),
                 "lang": "",
+                "subreddit": c.get("subreddit", ""),
             }))
     except FileNotFoundError:
         pass
 
     if not frames:
         log.warning("No collected data found; run the collectors first.")
-        return pd.DataFrame(columns=["doc_id", "source", "author", "created_at", "text", "lang"])
+        return pd.DataFrame(columns=["doc_id", "source", "author", "created_at", "text", "lang", "subreddit"])
 
     df = pd.concat(frames, ignore_index=True)
+    df["subreddit"] = df["subreddit"].fillna("")
     df["text"] = df["text"].apply(clean_basic)
     df = df[df["text"].str.len() > 0].reset_index(drop=True)
     # Drop automated / official accounts (mod bots etc.) — not real participants.

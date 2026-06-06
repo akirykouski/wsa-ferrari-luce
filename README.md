@@ -60,7 +60,8 @@ Each stage is a module under `src/` — run with `python -m src.<name>` (or call
 | 05 | `python -m src.content_sentiment` | 5 | `documents_sentiment.csv`, `aspect_sentiment.csv`, `sentiment_timeline.csv` |
 | 06 | `python -m src.content_enrich` | + | `documents_enriched.csv`, `topics_keywords.csv`, `language_sentiment.csv` |
 | 07 | `python -m src.ner_entities` | 6 | `entity_frequency.csv`, `entity_cooccurrence.csv`, `entity_sentiment.csv` |
-| 08 | `python -m src.viz` | — | all figures (`.png`) in `figures/` |
+| 08 | `python -m src.community_sentiment` | 4×5 | `community_sentiment.csv`, `community_camps.csv`, `documents_communities.csv` |
+| 09 | `python -m src.viz` | — | all figures (`.png`) in `figures/` |
 
 Stages 03–08 read the CSVs in `data/processed/`, so once collection (01–02) has
 run you can re-run analysis freely. Outputs are written to `data/processed/`
@@ -84,6 +85,11 @@ interaction network).
   (**RQ7**), topic modelling, language segmentation (**RQ8**).
 - **LAB 6** (NER) → `ner_entities.py` — spaCy entities, co-occurrence,
   entity-level sentiment (**RQ5**).
+- **LAB 4 × LAB 5** (community-specific sentiment) → `community_sentiment.py` —
+  joins per-document sentiment to the Louvain user-communities and labels each
+  community from its dominant subreddit + distinctive keywords (**F1 fans**,
+  **EV enthusiasts**, **Apple/design crowd**, **traders**, **Ferrari faithful**),
+  then rolls them up into discourse "camps" with per-camp sentiment (**RQ2 × RQ3**).
 
 **Graceful degradation:** if a transformer/topic model isn't installed, that
 step logs a warning and is skipped while lexicon results (VADER/AFINN/NRC) and

@@ -159,8 +159,18 @@ def sentiment_timeline(df: pd.DataFrame) -> pd.DataFrame:
 
 def main() -> None:
     df = load_documents()
+    # Sentiment is always recomputed on the FULL current corpus. Refuse to run on
+    # an empty corpus rather than silently leaving a stale documents_sentiment.csv
+    # that every downstream stage would then consume.
     if df.empty:
-        return
+        raise RuntimeError(
+            "Empty corpus — collect data first (run the collection step). Refusing "
+            "to run sentiment so a stale documents_sentiment.csv can't be reused."
+        )
+    by_source = df["source"].value_counts().to_dict()
+    by_kind = df["doc_id"].str.split("_").str[0].value_counts().to_dict()
+    log.info("Sentiment corpus: %d documents | sources=%s | doc kinds=%s",
+             len(df), by_source, by_kind)
     df = add_lexicon_sentiment(df)
     df = add_emotions(df)
     df = add_transformer_sentiment(df)

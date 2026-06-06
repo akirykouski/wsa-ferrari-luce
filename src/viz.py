@@ -218,6 +218,30 @@ def entity_frequency(n: int = 20):
     _save(fig, "entity_frequency.png")
 
 
+def community_sentiment(top_n: int = 12):
+    """Sentiment per discourse camp — communities rolled up by label
+    (F1 fans, EV enthusiasts, Apple/design crowd, traders, ...). 100%-stacked
+    so camps of different sizes are comparable; n = docs per camp."""
+    df = load_csv("community_camps.csv")
+    parts = [p for p in ("negative", "neutral", "positive") if p in df.columns]
+    df = df.sort_values("n_docs", ascending=False).head(top_n).iloc[::-1]  # biggest on top
+    labels = df["label"].tolist()
+    totals = df[parts].sum(axis=1).replace(0, 1).values
+    left = [0.0] * len(df)
+    fig, ax = plt.subplots(figsize=(9, 0.55 * len(df) + 1.8))
+    for p in parts:
+        frac = (df[p].values / totals)
+        ax.barh(labels, frac, left=left, color=SENT_COLORS[p], label=p)
+        left = [l + f for l, f in zip(left, frac)]
+    for i, n in enumerate(df["n_docs"]):
+        ax.text(1.01, i, f"n={int(n)}", va="center", fontsize=7, color="#444")
+    ax.set_xlim(0, 1)
+    ax.set_xlabel("share of documents")
+    ax.set_title("Sentiment by discourse camp (community-level)")
+    ax.legend(ncol=3, loc="lower center", bbox_to_anchor=(0.5, 1.02), frameon=False)
+    _save(fig, "community_sentiment.png")
+
+
 def community_network(top_n: int = 200):
     """Static interaction network of the most central accounts, coloured by
     community and sized by PageRank (matplotlib + networkx spring layout).
@@ -254,7 +278,8 @@ def community_network(top_n: int = 200):
 
 def main() -> None:
     for fn in (sentiment_distribution, emotions, aspect_sentiment, timeline,
-               wordclouds, centrality_top, entity_frequency, community_network):
+               wordclouds, centrality_top, entity_frequency,
+               community_sentiment, community_network):
         _try(fn)
 
 
