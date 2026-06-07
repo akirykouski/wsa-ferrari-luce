@@ -230,10 +230,25 @@ def community_structure(top_communities: int = 10, max_per_community: int = 150)
     if G.number_of_nodes() == 0:
         return
     comm = load_csv("nodes_communities.csv").set_index("node")["community_louvain"].to_dict()
-    try:  # human labels per community, if community_sentiment has run
-        labels = load_csv("community_sentiment.csv").set_index("community")["label"].to_dict()
+    labels, keywords = {}, {}
+    try:  # human labels + distinctive keywords per community, if available
+        cs = load_csv("community_sentiment.csv").set_index("community")
+        labels = cs["label"].to_dict()
+        keywords = cs["top_keywords"].to_dict()
     except Exception:  # noqa: BLE001
-        labels = {}
+        pass
+
+    # Several distinct communities can share a category label (e.g. r/Ferrari splits
+    # into many communities). Pick a distinctive (non-generic) keyword to tell them apart.
+    _generic = {"interior", "buy", "new", "brand", "looks", "look", "design", "way",
+                "make", "want", "actually", "maybe", "good", "really", "people"}
+
+    def _hint(c):
+        for w in str(keywords.get(c, "")).split(","):
+            w = w.strip()
+            if w and w not in _generic:
+                return w
+        return ""
 
     from collections import Counter
     sizes = Counter(comm.get(n) for n in G.nodes if comm.get(n) is not None)
@@ -266,11 +281,13 @@ def community_structure(top_communities: int = 10, max_per_community: int = 150)
     for i, c in enumerate(kept):
         ang = 2 * math.pi * i / len(kept)
         lab = labels.get(c, f"community {c}")
+        hint = _hint(c)
+        sub = f"#{c} · {hint}" if hint else f"#{c}"
         ax.text(1.18 * R * math.cos(ang), 1.18 * R * math.sin(ang),
-                f"{lab}\n(n={sizes[c]})", ha="center", va="center",
+                f"{lab}\n{sub}  (n={sizes[c]})", ha="center", va="center",
                 fontsize=8, fontweight="bold")
-    ax.set_title(f"Community structure — every user equal size, coloured by community "
-                 f"(top {len(kept)} communities; PageRank-independent)")
+    ax.set_title(f"Community structure — top {len(kept)} communities, every user equal size "
+                 f"(PageRank-independent). Distinct communities (#id) may share a category label.")
     ax.margins(0.12)
     ax.axis("off")
     _save(fig, "community_structure.png")
