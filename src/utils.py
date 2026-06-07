@@ -19,9 +19,6 @@ from . import config
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("wsa")
 
-# ----------------------------------------------------------------------------
-# Credentials
-# ----------------------------------------------------------------------------
 def load_env() -> None:
     """Load .env into os.environ (no-op if python-dotenv is missing)."""
     try:
@@ -42,9 +39,6 @@ def require_env(*keys: str) -> dict[str, str]:
     return {k: os.environ[k] for k in keys}
 
 
-# ----------------------------------------------------------------------------
-# Retry / backoff (LAB 2 pattern)
-# ----------------------------------------------------------------------------
 def with_retries(
     func: Callable,
     *args,
@@ -58,7 +52,7 @@ def with_retries(
     for attempt in range(max_attempts):
         try:
             return func(*args, **kwargs)
-        except exceptions as e:  # noqa: BLE001 - intentionally broad, re-raised below
+        except exceptions as e:
             if attempt == max_attempts - 1:
                 raise
             delay = min(base ** attempt, max_delay)
@@ -67,9 +61,6 @@ def with_retries(
             time.sleep(delay)
 
 
-# ----------------------------------------------------------------------------
-# Text cleaning  (LAB 1 regex skills reused here instead of scraping news)
-# ----------------------------------------------------------------------------
 URL_RE = re.compile(r"https?://\S+|www\.\S+")
 MENTION_RE = re.compile(r"@[\w.]+")
 HASHTAG_RE = re.compile(r"#(\w+)")
@@ -85,10 +76,7 @@ def clean_basic(text: str) -> str:
 
 
 def clean_for_transformer(text: str) -> str:
-    """cardiffnlp-recommended normalisation: @user / http placeholders.
-
-    Used for the BPE / transformer lane (Lane B). Do NOT stopword/lemmatise here.
-    """
+    """cardiffnlp-recommended normalisation: @user / http placeholders."""
     if not isinstance(text, str):
         return ""
     out = []
@@ -119,10 +107,7 @@ def _ensure_nltk() -> None:
 
 
 def tokens_for_lexicon(text: str, lang: str = "english") -> list[str]:
-    """Word-level lane (Lane A): TweetTokenizer + lowercase + stopwords + lemma.
-
-    Feeds VADER/AFINN/NRC word stats, TF-IDF and word clouds.
-    """
+    """TweetTokenizer + lowercase + stopwords + lemma."""
     if not isinstance(text, str) or not text.strip():
         return []
     _ensure_nltk()
@@ -140,7 +125,7 @@ def tokens_for_lexicon(text: str, lang: str = "english") -> list[str]:
     for t in tok.tokenize(clean_basic(text)):
         if t in stop:
             continue
-        if not re.search(r"[a-zA-Z#]", t):  # drop pure punctuation/numbers
+        if not re.search(r"[a-zA-Z#]", t):
             continue
         out.append(lemm.lemmatize(t))
     return out
@@ -159,9 +144,6 @@ def is_bot(name) -> bool:
     return bool(n) and (n in config.BOT_ACCOUNTS or n.endswith(config.BOT_SUFFIXES))
 
 
-# ----------------------------------------------------------------------------
-# Language detection (RQ8)
-# ----------------------------------------------------------------------------
 def detect_lang(text: str) -> str:
     if not isinstance(text, str) or len(text.strip()) < 3:
         return "unknown"
@@ -173,9 +155,6 @@ def detect_lang(text: str) -> str:
         return "unknown"
 
 
-# ----------------------------------------------------------------------------
-# I/O helpers
-# ----------------------------------------------------------------------------
 def save_csv(df: pd.DataFrame, name: str, processed: bool = True) -> Path:
     folder = config.DATA_PROCESSED if processed else config.DATA_RAW
     path = folder / name

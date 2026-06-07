@@ -1,15 +1,3 @@
-"""Content-analysis enrichments built on the Lab 5 pipeline.
-
-  RQ6  sarcasm / irony  -> cardiffnlp/twitter-roberta-base-irony  (+ corrects sentiment)
-  RQ7  stance           -> zero-shot NLI (facebook/bart-large-mnli) toward Luce & EVs
-  ---  topic modelling  -> BERTopic, falling back to scikit-learn LDA
-  RQ8  language          -> sentiment/stance cross-tab by language
-
-All transformer steps degrade gracefully if the model stack is unavailable.
-
-Run:  python -m src.content_enrich   (after content_sentiment for correction)
-Outputs: documents_enriched.csv , topics_keywords.csv , language_sentiment.csv
-"""
 from __future__ import annotations
 import pandas as pd
 
@@ -18,7 +6,7 @@ from .utils import log, save_csv, load_csv, clean_for_transformer
 from .corpus import load_documents
 from .content_sentiment import get_pipeline
 
-STANCE_MAX = 2000  # cap zero-shot passes for runtime sanity (logged if it bites)
+STANCE_MAX = 2000
 TARGET_PHRASES = {"luce": "the Ferrari Luce", "ev_transition": "electric vehicles"}
 STANCE_LABELS = {"in favor of": "favor", "against": "against", "neutral about": "neutral"}
 
@@ -33,12 +21,11 @@ def _load_base() -> pd.DataFrame:
         return load_documents()
 
 
-# ----------------------------------------------------------------- RQ6 sarcasm
 def add_irony(df: pd.DataFrame, batch_size: int = 32) -> pd.DataFrame:
     try:
         pipe = get_pipeline("text-classification", config.IRONY_MODEL)
-    except Exception as e:  # noqa: BLE001
-        log.warning("irony model unavailable (%s); skipping RQ6.", e)
+    except Exception as e:
+        log.warning("irony model unavailable (%s); skipping irony detection.", e)
         df["irony_flag"] = False
         return df
     texts = df["text"].apply(clean_for_transformer).tolist()
@@ -51,7 +38,6 @@ def add_irony(df: pd.DataFrame, batch_size: int = 32) -> pd.DataFrame:
             scores.append(float(r["score"]))
     df["irony_flag"] = flags
     df["irony_score"] = scores
-    # Correction: an ironically "positive" post is really negative (RQ6).
     if "transformer_label" in df.columns:
         def correct(row):
             lab = row.get("transformer_label")
@@ -63,12 +49,11 @@ def add_irony(df: pd.DataFrame, batch_size: int = 32) -> pd.DataFrame:
     return df
 
 
-# ------------------------------------------------------------------- RQ7 stance
 def add_stance(df: pd.DataFrame) -> pd.DataFrame:
     try:
         zsc = get_pipeline("zero-shot-classification", config.STANCE_NLI_MODEL)
-    except Exception as e:  # noqa: BLE001
-        log.warning("stance NLI model unavailable (%s); skipping RQ7.", e)
+    except Exception as e:
+        log.warning("stance NLI model unavailable (%s); skipping stance.", e)
         return df
     n = min(len(df), STANCE_MAX)
     if n < len(df):
@@ -90,10 +75,8 @@ def add_stance(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-# --------------------------------------------------------------- topic modelling
 def topic_model(df: pd.DataFrame, n_topics: int = 8) -> pd.DataFrame:
     texts = df["text"].tolist()
-    # 1) BERTopic (preferred)
     try:
         from bertopic import BERTopic
         tm = BERTopic(language="multilingual", verbose=False)
@@ -103,9 +86,8 @@ def topic_model(df: pd.DataFrame, n_topics: int = 8) -> pd.DataFrame:
         save_csv(info.rename(columns=str.lower), "topics_keywords.csv")
         log.info("BERTopic found %d topics.", len(info))
         return df
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         log.warning("BERTopic unavailable (%s); falling back to sklearn LDA.", e)
-    # 2) scikit-learn LDA fallback (core dep)
     try:
         from sklearn.feature_extraction.text import CountVectorizer
         from sklearn.decomposition import LatentDirichletAllocation
@@ -120,12 +102,11 @@ def topic_model(df: pd.DataFrame, n_topics: int = 8) -> pd.DataFrame:
         save_csv(pd.DataFrame(rows), "topics_keywords.csv")
         df["topic"] = W.argmax(axis=1)
         log.info("LDA found %d topics.", n_topics)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         log.warning("topic modelling failed (%s).", e)
     return df
 
 
-# ------------------------------------------------------------------- RQ8 language
 def language_segmentation(df: pd.DataFrame) -> pd.DataFrame:
     label_col = "sentiment_corrected" if "sentiment_corrected" in df.columns else (
         "transformer_label" if "transformer_label" in df.columns else "vader_label")

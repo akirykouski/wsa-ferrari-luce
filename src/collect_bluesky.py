@@ -77,7 +77,7 @@ def _flatten(post) -> dict:
 
 def search_query(client, query: str, max_results: int = config.BLUESKY_MAX_PER_QUERY,
                  since: str | None = config.SINCE_ISO, until: str | None = config.UNTIL_ISO) -> list[dict]:
-    """Cursor-paginated search_posts for a single query (LAB 2)."""
+    """Cursor-paginated search_posts for a single query."""
     out: list[dict] = []
     cursor = None
     while len(out) < max_results:
@@ -96,7 +96,7 @@ def search_query(client, query: str, max_results: int = config.BLUESKY_MAX_PER_Q
         cursor = getattr(resp, "cursor", None)
         if not cursor:
             break
-        time.sleep(0.4)  # be polite
+        time.sleep(0.4)
     log.info("  query %-28s -> %d posts", query, len(out))
     return out[:max_results]
 

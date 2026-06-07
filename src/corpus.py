@@ -28,7 +28,7 @@ def load_documents() -> pd.DataFrame:
                 "created_at": b["created_at"],
                 "text": b["text"].fillna(""),
                 "lang": b["langs"].apply(_first_lang),
-                "subreddit": "",   # bluesky has no subreddit
+                "subreddit": "",
             }))
     except FileNotFoundError:
         pass
@@ -71,12 +71,10 @@ def load_documents() -> pd.DataFrame:
     df["subreddit"] = df["subreddit"].fillna("")
     df["text"] = df["text"].apply(clean_basic)
     df = df[df["text"].str.len() > 0].reset_index(drop=True)
-    # Drop automated / official accounts (mod bots etc.) — not real participants.
     n_before = len(df)
     df = df[~df["author"].map(is_bot)].reset_index(drop=True)
     if n_before - len(df):
         log.info("dropped %d bot-authored documents", n_before - len(df))
-    # fill missing language via langdetect (RQ8)
     mask = df["lang"].fillna("") == ""
     df.loc[mask, "lang"] = df.loc[mask, "text"].apply(detect_lang)
     df["created_at"] = pd.to_datetime(df["created_at"], errors="coerce", utc=True)

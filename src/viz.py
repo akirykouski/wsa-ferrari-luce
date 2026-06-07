@@ -1,19 +1,13 @@
-"""Visualization helpers. Each function reads a processed CSV and writes a figure
-to figures/. Functions skip silently if their input isn't there yet, so you can
-run this after any subset of the pipeline.
-
-Run:  python -m src.viz
-"""
 from __future__ import annotations
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
 
-try:  # seaborn gives the charts a cleaner default look (optional)
+try:
     import seaborn as sns
     sns.set_theme(style="whitegrid", context="notebook")
-except Exception:  # noqa: BLE001
+except Exception:
     pass
 
 from . import config
@@ -35,11 +29,10 @@ def _try(fn):
         fn()
     except FileNotFoundError:
         log.info("skip %s (input missing)", fn.__name__)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         log.warning("%s failed: %s", fn.__name__, e)
 
 
-# ------------------------------------------------------------------- content
 def sentiment_distribution():
     df = load_csv("documents_enriched.csv") if (config.DATA_PROCESSED / "documents_enriched.csv").exists() else load_csv("documents_sentiment.csv")
     col = next((c for c in ("sentiment_corrected", "transformer_label", "vader_label") if c in df.columns), None)
@@ -59,7 +52,7 @@ def emotions():
         return
     means = df[emo_cols].mean().sort_values(ascending=False)
     means.index = [c.replace("emo_", "") for c in means.index]
-    if means.sum() == 0:  # all-zero -> NRCLex didn't populate; don't emit a blank chart
+    if means.sum() == 0:
         log.warning("emotions: all emo_ columns are zero; skipping (check add_emotions/NRCLex).")
         return
     fig, ax = plt.subplots(figsize=(6, 4))
@@ -93,14 +86,11 @@ def timeline():
     tl = load_csv("sentiment_timeline.csv")
     tl["created_at"] = pd.to_datetime(tl["created_at"], errors="coerce", utc=True)
     tl = tl.dropna(subset=["created_at"]).set_index("created_at")
-    # Daily bins are too sparse (most days are empty) -> aggregate to weekly.
-    # Weekly mean sentiment is the post-weighted mean: daily mean * count = daily
-    # sum, so sum(mean*n)/sum(n) recovers the true weekly mean.
     tl["sum_compound"] = tl["mean_compound"].fillna(0) * tl["n_docs"]
     wk = tl.resample("W").agg(n_docs=("n_docs", "sum"),
                               sum_compound=("sum_compound", "sum"))
     wk["mean_compound"] = (wk["sum_compound"] / wk["n_docs"]).where(wk["n_docs"] > 0)
-    active = wk[wk["n_docs"] > 0]  # line only across weeks that actually have posts
+    active = wk[wk["n_docs"] > 0]
 
     fig, ax1 = plt.subplots(figsize=(11, 5))
     bars = ax1.bar(wk.index, wk["n_docs"], width=5, color="#aec7e8",
@@ -116,7 +106,6 @@ def timeline():
     ax2.tick_params(axis="y", labelcolor="#d62728")
     ax2.set_ylim(-1, 1)
 
-    # Event markers (single shared legend entry).
     evt_handle = None
     for date, lbl in config.EVENT_DATES:
         try:
@@ -133,14 +122,6 @@ def timeline():
 
 
 def wordclouds():
-    """One cloud per sentiment, sized by how *distinctive* each term is to that
-    class rather than by raw frequency.
-
-    Raw-frequency clouds are dominated by words common to every class ("people",
-    "think", "design"...), which carry no contrast. Instead we TF-IDF the whole
-    corpus (uni- + bi-grams) so corpus-wide words are downweighted, drop near-
-    universal terms via max_df, then rank each class by its mean TF-IDF weight.
-    """
     try:
         from wordcloud import WordCloud, STOPWORDS
     except Exception:
@@ -158,7 +139,7 @@ def wordclouds():
     try:
         import numpy as np
         from sklearn.feature_extraction.text import TfidfVectorizer, ENGLISH_STOP_WORDS
-    except Exception:  # noqa: BLE001 - fall back to plain frequency clouds below
+    except Exception:
         TfidfVectorizer = None
 
     if TfidfVectorizer is not None:
@@ -189,7 +170,6 @@ def wordclouds():
                 _save(fig, f"wordcloud_{sentiment}.png")
             return
 
-    # Fallback (sklearn unavailable): plain frequency clouds.
     for sentiment in sentiments:
         text = " ".join(df.loc[df[col] == sentiment, "text"])
         if len(text) < 50:
@@ -201,7 +181,6 @@ def wordclouds():
         _save(fig, f"wordcloud_{sentiment}.png")
 
 
-# ------------------------------------------------------------------- network
 def centrality_top(n: int = 15):
     df = load_csv("nodes_centrality.csv").head(n)
     fig, ax = plt.subplots(figsize=(7, 5))
@@ -219,12 +198,9 @@ def entity_frequency(n: int = 20):
 
 
 def community_sentiment(top_n: int = 12):
-    """Sentiment per discourse camp — communities rolled up by label
-    (F1 fans, EV enthusiasts, Apple/design crowd, traders, ...). 100%-stacked
-    so camps of different sizes are comparable; n = docs per camp."""
     df = load_csv("community_camps.csv")
     parts = [p for p in ("negative", "neutral", "positive") if p in df.columns]
-    df = df.sort_values("n_docs", ascending=False).head(top_n).iloc[::-1]  # biggest on top
+    df = df.sort_values("n_docs", ascending=False).head(top_n).iloc[::-1]
     labels = df["label"].tolist()
     totals = df[parts].sum(axis=1).replace(0, 1).values
     left = [0.0] * len(df)
@@ -242,13 +218,65 @@ def community_sentiment(top_n: int = 12):
     _save(fig, "community_sentiment.png")
 
 
-def community_network(top_n: int = 200):
-    """Static interaction network of the most central accounts, coloured by
-    community and sized by PageRank (matplotlib + networkx spring layout).
-
-    The full graph is an 8k-node hairball, so we draw the subgraph induced by
-    the top-N accounts by PageRank, which keeps the figure legible.
+def community_structure(top_communities: int = 10, max_per_community: int = 150):
+    """Community map where every user is drawn at the SAME size and coloured by
+    community, so the structure is clear regardless of any user's PageRank — a quiet
+    member is as visible as a hub. The largest communities are each laid out as their
+    own cluster (arranged on a ring); members are sampled to keep the figure legible.
     """
+    import math
+    import networkx as nx
+    G = nx.read_graphml(config.DATA_PROCESSED / "graph.graphml")
+    if G.number_of_nodes() == 0:
+        return
+    comm = load_csv("nodes_communities.csv").set_index("node")["community_louvain"].to_dict()
+    try:  # human labels per community, if community_sentiment has run
+        labels = load_csv("community_sentiment.csv").set_index("community")["label"].to_dict()
+    except Exception:  # noqa: BLE001
+        labels = {}
+
+    from collections import Counter
+    sizes = Counter(comm.get(n) for n in G.nodes if comm.get(n) is not None)
+    kept = [c for c, _ in sizes.most_common(top_communities)]
+
+    U = G.to_undirected()
+    pos, node_comm, drawn = {}, {}, []
+    R = 10.0
+    for i, c in enumerate(kept):
+        members = [n for n in U.nodes if comm.get(n) == c]
+        if len(members) > max_per_community:
+            members = sorted(members)[:max_per_community]   # deterministic, PageRank-blind
+        sub = U.subgraph(members)
+        local = nx.spring_layout(sub, seed=42, k=0.6)
+        ang = 2 * math.pi * i / len(kept)
+        cx, cy = R * math.cos(ang), R * math.sin(ang)
+        for n, (x, y) in local.items():
+            pos[n] = (cx + 3.0 * x, cy + 3.0 * y)
+            node_comm[n] = i
+            drawn.append(n)
+    H = U.subgraph(drawn)
+
+    fig, ax = plt.subplots(figsize=(12, 10))
+    nx.draw_networkx_edges(H, pos, ax=ax, alpha=0.08, width=0.4, edge_color="#999")
+    cmap = plt.cm.tab10 if len(kept) <= 10 else plt.cm.tab20
+    nx.draw_networkx_nodes(H, pos, ax=ax, nodelist=drawn,
+                           node_color=[node_comm[n] for n in drawn], cmap=cmap,
+                           vmin=0, vmax=max(9, len(kept) - 1),
+                           node_size=28, linewidths=0.2, edgecolors="white")
+    for i, c in enumerate(kept):
+        ang = 2 * math.pi * i / len(kept)
+        lab = labels.get(c, f"community {c}")
+        ax.text(1.18 * R * math.cos(ang), 1.18 * R * math.sin(ang),
+                f"{lab}\n(n={sizes[c]})", ha="center", va="center",
+                fontsize=8, fontweight="bold")
+    ax.set_title(f"Community structure — every user equal size, coloured by community "
+                 f"(top {len(kept)} communities; PageRank-independent)")
+    ax.margins(0.12)
+    ax.axis("off")
+    _save(fig, "community_structure.png")
+
+
+def community_network(top_n: int = 200):
     import networkx as nx
     G = nx.read_graphml(config.DATA_PROCESSED / "graph.graphml")
     if G.number_of_nodes() == 0:
@@ -267,7 +295,6 @@ def community_network(top_n: int = 200):
     nx.draw_networkx_edges(H, pos, ax=ax, alpha=0.15, width=0.6, edge_color="#999")
     nodes = nx.draw_networkx_nodes(H, pos, ax=ax, node_color=communities, cmap="tab20",
                                    node_size=sizes, linewidths=0.3, edgecolors="white")
-    # label only the dozen most central accounts so it stays readable
     top_labels = sorted(H.nodes, key=lambda n: cent.get(n, 0) or 0, reverse=True)[:12]
     nx.draw_networkx_labels(H, pos, labels={n: n for n in top_labels}, ax=ax, font_size=7)
     ax.set_title(f"Interaction network — top {H.number_of_nodes()} accounts by PageRank "
@@ -279,7 +306,7 @@ def community_network(top_n: int = 200):
 def main() -> None:
     for fn in (sentiment_distribution, emotions, aspect_sentiment, timeline,
                wordclouds, centrality_top, entity_frequency,
-               community_sentiment, community_network):
+               community_sentiment, community_structure, community_network):
         _try(fn)
 
 

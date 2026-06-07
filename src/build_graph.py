@@ -29,7 +29,6 @@ def _add_edge(G: nx.DiGraph, u, v, relation: str, platform: str) -> None:
 def build_interaction_graph() -> nx.DiGraph:
     G = nx.DiGraph()
 
-    # ---- Bluesky: mentions + replies ----
     try:
         bsky = load_csv("posts_bluesky.csv")
     except FileNotFoundError:
@@ -48,7 +47,6 @@ def build_interaction_graph() -> nx.DiGraph:
             if isinstance(parent, str) and parent in uri2handle:
                 _add_edge(G, src, uri2handle[parent], "reply", "bluesky")
 
-    # ---- Reddit: comment author -> parent author ----
     try:
         subs = load_csv("reddit_submissions.csv")
         coms = load_csv("reddit_comments.csv")

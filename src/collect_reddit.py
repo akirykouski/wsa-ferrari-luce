@@ -1,23 +1,3 @@
-"""LAB 2 — Reddit collector. Three interchangeable paths, same output schema:
-
-  PRAW         — read-only OAuth (needs a Reddit script app: client id + secret).
-  Arctic-Shift — free, **NO ACCOUNT / NO KEY**, actively-maintained Pushshift
-                 mirror (primary no-account path; more reliable than PullPush).
-  PullPush.io  — free, **NO ACCOUNT / NO KEY**, Pushshift-successor (used as a
-                 last-resort fallback if Arctic-Shift is unavailable).
-
-`main()` auto-selects: if Reddit API creds are present it uses PRAW; otherwise it
-uses Arctic-Shift, falling back to PullPush, so the project works with no Reddit
-developer app at all.
-
-Key gotchas handled here:
-  * comment trees are lazy  -> submission.comments.replace_more(limit=0)  (PRAW)
-  * listing 1000-item cap   -> diversify across subreddits x sort x time_filter
-  * PullPush rate limits     -> polite sleeps + retry/backoff
-
-Run:  python -m src.collect_reddit
-Outputs:  data/processed/reddit_submissions.csv , reddit_comments.csv
-"""
 from __future__ import annotations
 import os
 import time
@@ -29,9 +9,6 @@ from . import config
 from .utils import log, require_env, with_retries, save_csv, dedup, load_env
 
 
-# ----------------------------------------------------------------------------
-# PRAW (primary)
-# ----------------------------------------------------------------------------
 def get_reddit():
     creds = require_env("REDDIT_CLIENT_ID", "REDDIT_CLIENT_SECRET", "REDDIT_USER_AGENT")
     import praw

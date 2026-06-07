@@ -1,15 +1,3 @@
-"""LAB 5 — Sentiment, emotion, and Aspect-Based Sentiment Analysis.
-
-Lexicon lane (Lane A, word-level): VADER + AFINN + NRC emotions.
-Transformer lane (Lane B, BPE): cardiffnlp twitter-roberta sentiment.
-ABSA: tag each doc with product aspects (look/sound/price/...) -> aspect x sentiment.
-
-Transformer steps degrade gracefully: if transformers/torch aren't installed,
-the lexicon results are still produced.
-
-Run:  python -m src.content_sentiment
-Outputs: documents_sentiment.csv , aspect_sentiment.csv , sentiment_timeline.csv
-"""
 from __future__ import annotations
 import pandas as pd
 
@@ -21,7 +9,6 @@ EMOTIONS = ["anger", "anticipation", "disgust", "fear", "joy",
             "sadness", "surprise", "trust"]
 
 
-# ---------------------------------------------------------------- lexicon lane
 def add_lexicon_sentiment(df: pd.DataFrame) -> pd.DataFrame:
     from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
     from afinn import Afinn
@@ -39,29 +26,24 @@ def add_lexicon_sentiment(df: pd.DataFrame) -> pd.DataFrame:
 def add_emotions(df: pd.DataFrame) -> pd.DataFrame:
     try:
         from nrclex import NRCLex
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         log.warning("NRCLex unavailable (%s); skipping emotions.", e)
         return df
-    # NRCLex >=4 changed its API: text is no longer a constructor argument (that
-    # slot is now a lexicon-file path) and `affect_frequencies` only exists after
-    # `load_raw_text()`. The old `NRCLex(text).affect_frequencies` therefore raised
-    # AttributeError and silently produced all-zero emotion columns. Detect the
-    # API once, reuse a single analyzer, and fall back to the legacy form.
     try:
         analyzer = NRCLex()
         new_api = hasattr(analyzer, "load_raw_text")
-    except Exception:  # noqa: BLE001 - legacy NRCLex() may require text
+    except Exception:
         analyzer, new_api = None, False
 
     def emo(t):
         text = str(t)[:2000]
-        try:  # NRCLex can choke on very long / pathological text — never fatal
+        try:
             if new_api:
-                analyzer.load_raw_text(text)  # needs TextBlob
+                analyzer.load_raw_text(text)
                 freqs = analyzer.affect_frequencies
             else:
                 freqs = NRCLex(text).affect_frequencies
-        except Exception:  # noqa: BLE001
+        except Exception:
             return [0.0] * len(EMOTIONS)
         return [freqs.get(e, 0.0) for e in EMOTIONS]
     mat = df["text"].apply(emo).tolist()
@@ -72,17 +54,16 @@ def add_emotions(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-# ------------------------------------------------------------ transformer lane
 _PIPE_CACHE: dict = {}
 
 
 def _device() -> int:
-    """0 = first CUDA GPU (Colab "Runtime -> GPU"), -1 = CPU. Cached by caller."""
+    """0 = first CUDA GPU, -1 = CPU."""
     try:
         import torch
         if torch.cuda.is_available():
             return 0
-    except Exception:  # noqa: BLE001 - torch missing / driver issue -> CPU
+    except Exception:
         pass
     return -1
 
@@ -102,7 +83,7 @@ def get_pipeline(task: str, model: str):
 def add_transformer_sentiment(df: pd.DataFrame, batch_size: int = 32) -> pd.DataFrame:
     try:
         pipe = get_pipeline("sentiment-analysis", config.SENTIMENT_MODEL)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         log.warning("transformer sentiment unavailable (%s); using VADER only.", e)
         df["transformer_label"] = df.get("vader_label")
         df["transformer_score"] = None
@@ -120,7 +101,6 @@ def add_transformer_sentiment(df: pd.DataFrame, batch_size: int = 32) -> pd.Data
     return df
 
 
-# --------------------------------------------------------------------- ABSA
 def tag_aspects(text: str) -> list[str]:
     t = (text or "").lower()
     return [asp for asp, kws in config.ASPECTS.items() if any(k in t for k in kws)]
@@ -159,9 +139,6 @@ def sentiment_timeline(df: pd.DataFrame) -> pd.DataFrame:
 
 def main() -> None:
     df = load_documents()
-    # Sentiment is always recomputed on the FULL current corpus. Refuse to run on
-    # an empty corpus rather than silently leaving a stale documents_sentiment.csv
-    # that every downstream stage would then consume.
     if df.empty:
         raise RuntimeError(
             "Empty corpus — collect data first (run the collection step). Refusing "

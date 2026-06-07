@@ -76,7 +76,7 @@ EVENT_DATES = [
 ]
 
 # ----------------------------------------------------------------------------
-# Aspect lexicons for Aspect-Based Sentiment Analysis (LAB 5, #CrazyPizza style)
+# Aspect lexicons for Aspect-Based Sentiment Analysis
 # Each post is tagged with every aspect whose keywords it matches.
 # ----------------------------------------------------------------------------
 ASPECTS: dict[str, list[str]] = {
@@ -116,7 +116,7 @@ ASPECTS: dict[str, list[str]] = {
     ],
 }
 
-# Community detection: ignore micro-communities below this size (LAB 4). Members
+# Community detection: ignore micro-communities below this size. Members
 # of any community smaller than this are merged into a single "other" bucket so
 # the discourse-camp summary and the network figure stay meaningful.
 MIN_COMMUNITY_SIZE = 5

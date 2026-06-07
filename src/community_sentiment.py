@@ -1,21 +1,9 @@
-"""
-The base pipeline scores sentiment per document and aggregates globally. This module
-instead aggregates sentiment per detected community — the Louvain communities of
-users from the interaction graph (communities.py) — and gives each community a
-human-readable label from its members' dominant subreddit plus distinctive keywords,
-so we can read the discourse camps directly: "F1 fans", "EV enthusiasts",
-"Apple/design crowd", "traders", "Ferrari faithful".
-
-Run:  python -m src.community_sentiment
-Outputs: data/processed/community_sentiment.csv , documents_communities.csv
-"""
 from __future__ import annotations
 import pandas as pd
 
 from . import config
 from .utils import log, save_csv, load_csv
 
-# Dominant-subreddit -> human label (communities are strongly subreddit-aligned here).
 SUBREDDIT_LABEL = {
     "Ferrari": "Ferrari faithful",
     "formula1": "F1 fans",
@@ -25,9 +13,6 @@ SUBREDDIT_LABEL = {
     "stocks": "Traders / investors", 
 }
 
-# Distinctive themes used to refine same-subreddit communities, from their top terms.
-# Tokens are intentionally specific (no generic "design"/"designer") so a theme only
-# fires when a community genuinely over-indexes on it.
 THEME_KEYWORDS = {
     "Apple/design": ["jony", "ive", "apple", "lovefrom"],
     "styling backlash": ["ugly", "hideous", "blob", "egg", "bubble"],
@@ -39,11 +24,8 @@ import re as _re
 
 _SENT_COLS = ("sentiment_corrected", "transformer_label", "vader_label")
 
-# Bots / system accounts whose posts are not real discourse — excluded from the
-# per-community sentiment and keyword aggregation (they still exist as graph nodes).
 _BOT_AUTHORS = {"automoderator", "[deleted]", "[removed]", "none", "nan", "",
                 "remindmebot", "visualmod", "ai-moderator"}
-# "...bot" only at a word boundary, so humans like "Talbot"/"junkyard_robot" survive.
 _BOT_SUFFIX = _re.compile(r"(?:^|[_-])bot$|modteam$")
 
 
@@ -52,7 +34,6 @@ def _is_human(author: str) -> bool:
     return a not in _BOT_AUTHORS and not _BOT_SUFFIX.search(a)
 
 
-# ----------------------------------------------------------------------------
 def _load_docs() -> pd.DataFrame:
     """Best available per-doc table. Prefer the irony-corrected enriched table,
     but only if it is at least as fresh as documents_sentiment.csv (so a re-run of
@@ -113,29 +94,25 @@ def _top_keywords_per_community(docs: pd.DataFrame, comm_col: str,
     """Distinctive terms per community via TF-IDF over per-community megadocs."""
     try:
         from sklearn.feature_extraction.text import TfidfVectorizer
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         log.warning("sklearn unavailable (%s); skipping keywords.", e)
         return {}
-    # one megadoc per community
     grouped = docs.groupby(comm_col)["text"].apply(lambda s: " ".join(s.astype(str)))
     comms = grouped.index.tolist()
-    if len(comms) < 2:   # TF-IDF distinctiveness is undefined with one megadoc
+    if len(comms) < 2:
         return {}
-    # drop a few topic-ubiquitous words so labels stay distinctive
     extra_stop = ["ferrari", "luce", "car", "cars", "ev", "electric", "just", "like",
                   "https", "com", "www", "amp", "don", "really", "people", "think"]
     try:
         from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
         stop = list(ENGLISH_STOP_WORDS) + extra_stop
-    except Exception:  # noqa: BLE001
+    except Exception:
         stop = extra_stop
-    # min_df=1 keeps community-unique words; max_df=0.5 drops terms common to most
-    # communities (otherwise generic words like "design"/"looks" dominate every row).
     try:
         vec = TfidfVectorizer(stop_words=stop, min_df=1, max_df=0.5, max_features=4000,
                               ngram_range=(1, 1), token_pattern=r"[A-Za-z][A-Za-z]{2,}")
         X = vec.fit_transform(grouped.values)
-    except ValueError as e:   # e.g. empty vocabulary after pruning / non-English-only
+    except ValueError as e:
         log.warning("community keyword TF-IDF skipped (%s); labels use subreddit only.", e)
         return {}
     vocab = vec.get_feature_names_out()
@@ -148,21 +125,16 @@ def _top_keywords_per_community(docs: pd.DataFrame, comm_col: str,
 
 def _label(dominant_sub: str, sub_share: float, keywords: list[str],
            mix_threshold: float = 0.6) -> str:
-    # Only anchor on a subreddit when its members clearly concentrate there;
-    # a near-coin-flip plurality is not a real identity.
     if dominant_sub and sub_share >= mix_threshold:
         base = SUBREDDIT_LABEL.get(dominant_sub, f"r/{dominant_sub}")
     else:
         base = "mixed / other"
-    # Pick the theme with the most distinctive-keyword hits (deterministic tie-break
-    # by THEME_KEYWORDS order), not just the first theme that matches.
     kw = set(keywords)
     scored = [(sum(w in kw for w in words), theme) for theme, words in THEME_KEYWORDS.items()]
     best_n, best_theme = max(scored, key=lambda x: x[0]) if scored else (0, None)
     return f"{base} — {best_theme}" if best_n > 0 else base
 
 
-# ----------------------------------------------------------------------------
 def build(min_docs: int = 20, comm_col: str = "community_louvain") -> pd.DataFrame:
     docs = _load_docs()
     if docs.empty:
@@ -179,7 +151,6 @@ def build(min_docs: int = 20, comm_col: str = "community_louvain") -> pd.DataFra
         log.warning("no sentiment column in docs; run content_sentiment first.")
         return pd.DataFrame()
 
-    # doc -> community via author == node
     a2c = dict(zip(comm["node"].astype(str), comm[comm_col]))
     docs = docs.copy()
     docs["author"] = docs["author"].astype(str)
@@ -193,7 +164,6 @@ def build(min_docs: int = 20, comm_col: str = "community_louvain") -> pd.DataFra
              "(%d bot/system docs dropped, %d human docs have no community).",
              len(matched), len(docs), len(mapped) - len(matched), n_no_comm)
 
-    # subreddit per doc (from corpus column if present, else author lookup)
     if "subreddit" not in matched.columns or matched["subreddit"].fillna("").eq("").all():
         a2s = _subreddit_by_author()
         matched["subreddit"] = matched["author"].map(a2s).fillna("")
@@ -214,8 +184,6 @@ def build(min_docs: int = 20, comm_col: str = "community_louvain") -> pd.DataFra
         kws = keywords.get(int(c), [])
         rows.append({
             "community": int(c),
-            # theme only fires on a genuinely distinctive (top-5) term;
-            # subreddit anchor only when members clearly concentrate there.
             "label": _label(dom_sub, float(sub_share), kws[:5]),
             "n_members": int(members.get(c, 0)),
             "n_docs": len(g),
@@ -232,7 +200,6 @@ def build(min_docs: int = 20, comm_col: str = "community_louvain") -> pd.DataFra
            .reset_index(drop=True))
     save_csv(out, "community_sentiment.csv")
 
-    # also persist per-doc community+label for downstream viz / drill-down
     lbl = dict(zip(out["community"], out["label"]))
     matched["community_label"] = matched["community"].map(lbl)
     save_csv(matched[["doc_id", "author", "community", "community_label",

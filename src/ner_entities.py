@@ -1,12 +1,3 @@
-"""LAB 6 — Named Entity Recognition + entity-level sentiment.
-
-spaCy (en_core_web_sm) extracts entities; we report frequency, an entity
-co-occurrence network, and—joined with the sentiment layer—the sentiment
-distribution *toward* each entity (e.g. "Nissan Leaf", "Jony Ive", "Vigna").
-
-Run:  python -m src.ner_entities   (best after content_sentiment)
-Outputs: entity_frequency.csv , entity_cooccurrence.csv , entity_sentiment.csv
-"""
 from __future__ import annotations
 from collections import Counter, defaultdict
 from itertools import combinations

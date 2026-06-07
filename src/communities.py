@@ -1,11 +1,3 @@
-"""
-Louvain and greedy-modularity partitions are compared via modularity Q;
-assortativity tests the echo-chamber hypothesis. Community labels are
-attached back to nodes so the content layer can compute per-community sentiment.
-
-Run:  python -m src.communities  (requires src.build_graph to have run first)
-Outputs: data/processed/nodes_communities.csv , communities_summary.txt
-"""
 from __future__ import annotations
 from collections import Counter
 
@@ -76,8 +68,6 @@ def main() -> None:
         log.warning("Empty graph; run collectors + build_graph first.")
         return
     lmap, gmap, metrics = detect(U)
-    # Merge sub-threshold communities into an "other" bucket (-1) before they
-    # reach the node table, the camp summary and the network figure.
     lmap = merge_small(lmap, config.MIN_COMMUNITY_SIZE)
     gmap = merge_small(gmap, config.MIN_COMMUNITY_SIZE)
     metrics["min_community_size"] = config.MIN_COMMUNITY_SIZE
