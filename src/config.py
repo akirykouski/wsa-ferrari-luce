@@ -19,7 +19,7 @@ for _p in (DATA_RAW, DATA_PROCESSED, FIGURES):
 # ----------------------------------------------------------------------------
 # Topic definition: queries / subreddits / accounts
 # ----------------------------------------------------------------------------
-# Bluesky search supports Boolean ops:  space=AND, "|"=OR, "-"=NOT, quotes=phrase
+
 BLUESKY_QUERIES = [
     '"Ferrari Luce"',
     "Ferrari Luce",
@@ -27,9 +27,9 @@ BLUESKY_QUERIES = [
     "Ferrari electric",
     "Ferrari Elettrica",
     "#FerrariLuce",
-    "Ferrari Luce ugly",          # surface the backlash explicitly
+    "Ferrari Luce ugly",         
 ]
-#
+
 REDDIT_QUERIES = [
     "Ferrari Luce",
     "Ferrari Elettrica",
@@ -63,10 +63,10 @@ KEY_BLUESKY_ACCOUNTS: list[str] = []
 # Time window (the Luce story)
 # ----------------------------------------------------------------------------
 # Capital Markets Day "Elettrica" preview -> production reveal -> stock drop.
-SINCE_ISO = "2025-10-01T00:00:00Z"     # widest window (since CMD)
-FOCUS_SINCE_ISO = "2026-05-20T00:00:00Z"  # the dense reveal window
-UNTIL_ISO = None                        # None = up to now
-REDDIT_TIME_FILTER = "year"             # PRAW search: all/year/month/week/day
+SINCE_ISO = "2025-10-01T00:00:00Z"     
+FOCUS_SINCE_ISO = "2026-05-20T00:00:00Z"  
+UNTIL_ISO = None                        
+REDDIT_TIME_FILTER = "year"             
 
 # Event markers for the temporal-sentiment chart (annotated manually, not scraped)
 EVENT_DATES = [
@@ -148,9 +148,7 @@ WORDCLOUD_STOPWORDS = {
 
 # Automated / official accounts (not real participants): mod bots, karma/reminder
 # bots, and subreddit mod-team accounts. Matched case-insensitively against exact
-# handles; any handle ending in a BOT_SUFFIXES entry (e.g. "cars-ModTeam") also
-# counts. NB: deliberately no generic "bot" substring — it false-matches real
-# users like "BothnianBhai". See utils.is_bot.
+# handles; any handle ending in a BOT_SUFFIXES entry (e.g. "cars-ModTeam")
 BOT_ACCOUNTS = {"automoderator", "visualmod", "cc_dispenser", "ai-moderator", "remindmebot"}
 BOT_SUFFIXES = ("-modteam",)
 
@@ -160,7 +158,7 @@ WATCH_ENTITIES = [
     "NIO", "Maranello", "Ferrari",
 ]
 
-# Languages of analytical interest (RQ8: Italian national-pride angle)
+# Languages of analytical interest
 LANGUAGES = ["en", "it"]
 
 # ----------------------------------------------------------------------------
@@ -182,6 +180,6 @@ STANCE_TARGETS = {
 # Collection caps (be polite to the APIs)
 # ----------------------------------------------------------------------------
 BLUESKY_MAX_PER_QUERY = 1000
-BLUESKY_PAGE_SIZE = 25          # API hard max for search_posts
+BLUESKY_PAGE_SIZE = 25          
 REDDIT_MAX_PER_QUERY = 500
 PULLPUSH_PAGE_SIZE = 100

@@ -1,7 +1,6 @@
-"""LAB 4 — Community detection on the (symmetrized) interaction graph.
-
+"""
 Louvain and greedy-modularity partitions are compared via modularity Q;
-assortativity tests the echo-chamber hypothesis (RQ2). Community labels are
+assortativity tests the echo-chamber hypothesis. Community labels are
 attached back to nodes so the content layer can compute per-community sentiment.
 
 Run:  python -m src.communities  (requires src.build_graph to have run first)
@@ -52,7 +51,7 @@ def detect(U: nx.Graph) -> tuple[dict, dict, dict]:
 
 def merge_small(comm_map: dict, min_size: int = 5) -> dict:
     """Relabel members of any community below `min_size` to a single 'other'
-    bucket (community -1), so tiny (often singleton) communities don't clutter
+    bucket (community -1), so tiny communities don't clutter
     the discourse-camp summary or the network figure."""
     sizes = Counter(comm_map.values())
     return {n: (c if sizes[c] >= min_size else -1) for n, c in comm_map.items()}
@@ -100,7 +99,7 @@ def main() -> None:
     n_other = sum(1 for x in lmap.values() if x == -1)
     for c, members in sorted(tops.items()):
         if c == -1:
-            continue  # the merged "other" bucket isn't a real camp
+            continue  
         lines.append(f"  community {c} (n={sum(1 for x in lmap.values() if x == c)}): {members}")
     if n_other:
         lines.append(f"  other (merged communities with n<{config.MIN_COMMUNITY_SIZE}): "

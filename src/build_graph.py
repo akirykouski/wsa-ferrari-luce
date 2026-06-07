@@ -1,14 +1,4 @@
-"""LAB 3 — Social Network Analysis: build the directed interaction graph and
-compute centrality measures.
 
-WHY DIRECTED: "A replies to / mentions B" is asymmetric. Direction lets us
-separate in-degree (attention received -> influence) from out-degree (activity),
-which is what makes PageRank / directed betweenness meaningful (RQ1).
-Community detection later symmetrizes to undirected (see communities.py).
-
-Run:  python -m src.build_graph
-Outputs: data/processed/graph.graphml , nodes_centrality.csv , graph_summary.txt
-"""
 from __future__ import annotations
 import networkx as nx
 import pandas as pd
@@ -23,7 +13,7 @@ _BAD_NODES = {"[deleted]", "None", "nan", ""}
 
 
 def _add_edge(G: nx.DiGraph, u, v, relation: str, platform: str) -> None:
-    if pd.isna(u) or pd.isna(v):   # NaN from empty CSV fields / missing authors
+    if pd.isna(u) or pd.isna(v):   
         return
     u, v = str(u).strip(), str(v).strip()
     if u == v or u in _BAD_NODES or v in _BAD_NODES or is_bot(u) or is_bot(v):
@@ -86,7 +76,7 @@ def compute_centralities(G: nx.DiGraph) -> pd.DataFrame:
         return pd.DataFrame()
     indeg = nx.in_degree_centrality(G)
     outdeg = nx.out_degree_centrality(G)
-    # betweenness can be costly; sample on large graphs
+    
     k = min(G.number_of_nodes(), 400) if G.number_of_nodes() > 400 else None
     btw = nx.betweenness_centrality(G, k=k, weight="weight", seed=42)
     clo = nx.closeness_centrality(G)

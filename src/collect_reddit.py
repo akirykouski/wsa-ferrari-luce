@@ -91,7 +91,7 @@ def collect_submissions(reddit, queries=None, subreddits=None) -> pd.DataFrame:
                 for s in gen:
                     rows.append(_flatten_submission(s, sub, q))
                 log.info("  r/%-16s %-22s -> %d", sub, q, len(rows) - n0)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:  
                 log.warning("  search failed r/%s '%s': %s", sub, q, e)
     rows = dedup(rows, key="id")
     df = pd.DataFrame(rows)
@@ -113,7 +113,7 @@ def collect_comments(reddit, submission_ids: list[str]) -> pd.DataFrame:
                 rows.append({
                     "id": getattr(c, "id", None),
                     "submission_id": sid,
-                    "parent_id": getattr(c, "parent_id", None),  # t1_/t3_ prefixed
+                    "parent_id": getattr(c, "parent_id", None),  
                     "author": str(author) if author else "[deleted]",
                     "body": getattr(c, "body", "") or "",
                     "score": getattr(c, "score", 0),
@@ -121,7 +121,7 @@ def collect_comments(reddit, submission_ids: list[str]) -> pd.DataFrame:
                     "subreddit": str(getattr(c, "subreddit", "")),
                     "source": "reddit",
                 })
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  
             log.warning("  comments failed for %s: %s", sid, e)
         if i % 25 == 0:
             log.info("  comments: %d/%d submissions processed", i, len(submission_ids))
@@ -132,10 +132,7 @@ def collect_comments(reddit, submission_ids: list[str]) -> pd.DataFrame:
     return df
 
 
-# ----------------------------------------------------------------------------
-# PullPush.io — free, NO ACCOUNT / NO KEY. Limits: 15 soft / 30 hard rpm, 1000/hr.
-# Pushshift-family params (after/before are epoch seconds, sort=desc).
-# ----------------------------------------------------------------------------
+
 PULLPUSH = "https://api.pullpush.io/reddit/search"
 _PP_SLEEP = 2.5  # seconds between requests to stay under the rate limit
 
@@ -220,7 +217,7 @@ def pullpush_collect_submissions(queries=None, max_per_query=config.REDDIT_MAX_P
                     if _relevant(f"{d.get('title','')} {d.get('selftext','')}")]
             rows.extend(kept)
             log.info("  PullPush submission '%s' -> %d kept / %d fetched", q, len(kept), len(data))
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  
             log.warning("  PullPush submission '%s' failed: %s", q, e)
     rows = dedup(rows, key="id")
     df = pd.DataFrame(rows)
@@ -252,7 +249,7 @@ def pullpush_collect_comments(submission_ids, max_submissions=150,
                     "subreddit": c.get("subreddit"),
                     "source": "reddit",
                 })
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  
             log.warning("  PullPush comments for %s failed: %s", sid, e)
         if i % 25 == 0:
             log.info("  comments: %d/%d submissions", i, len(ids))
@@ -263,19 +260,11 @@ def pullpush_collect_comments(submission_ids, max_submissions=150,
     return df
 
 
-# ----------------------------------------------------------------------------
-# Arctic-Shift — free, NO ACCOUNT / NO KEY. Actively-maintained Pushshift mirror
-# with the same record schema, so the PullPush flatteners are reused. This is the
-# primary no-account path (Reddit's own .json is now blocked for unauthenticated
-# clients, and PullPush is frequently overloaded). Docs: arctic-shift.photon-reddit.com
-#   * posts:    /api/posts/search?subreddit=&query=&after=&before=&limit=&sort=
-#   * comments: /api/comments/search?link_id=&after=&before=&limit=&sort=
-#     (note: comment search has no free-text `query`; we fetch per-submission)
-# ----------------------------------------------------------------------------
+
 ARCTIC = "https://arctic-shift.photon-reddit.com/api"
 _AS_HEADERS = {"User-Agent": "wsa-ferrari-luce/0.1 (research; no-account collector)"}
-_AS_SLEEP = 1.0          # polite gap between requests
-_AS_PAGE = 100           # API max per page
+_AS_SLEEP = 1.0          
+_AS_PAGE = 100           
 
 
 def arctic_search(kind: str, **params) -> list[dict]:
@@ -326,7 +315,7 @@ def arctic_collect_submissions(queries=None, subreddits=None,
                 rows.extend(kept)
                 log.info("  Arctic r/%-16s %-22s -> %d kept / %d fetched",
                          sub, q, len(kept), len(data))
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:  
                 log.warning("  Arctic r/%s '%s' failed: %s", sub, q, e)
     rows = dedup(rows, key="id")
     df = pd.DataFrame(rows)
@@ -357,7 +346,7 @@ def arctic_collect_comments(submission_ids, max_submissions=400,
                     "subreddit": c.get("subreddit"),
                     "source": "reddit",
                 })
-        except Exception as e:  # noqa: BLE001
+        except Exception as e: 
             log.warning("  Arctic comments for %s failed: %s", sid, e)
         if i % 25 == 0:
             log.info("  comments: %d/%d submissions", i, len(ids))
@@ -368,7 +357,7 @@ def arctic_collect_comments(submission_ids, max_submissions=400,
     return df
 
 
-# ----------------------------------------------------------------------------
+
 def main() -> None:
     load_env()
     have_api = all(os.environ.get(k) for k in
@@ -381,12 +370,12 @@ def main() -> None:
             collect_comments(reddit, subs["id"].dropna().tolist())
         return
 
-    # No account: Arctic-Shift first (reliable), PullPush as fallback.
+    # No account: Arctic-Shift first, PullPush as fallback.
     log.info("No Reddit API creds -> using Arctic-Shift (no account needed).")
     collect_comments_for = arctic_collect_comments
     try:
         subs = arctic_collect_submissions()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  
         log.warning("Arctic-Shift failed (%s); trying PullPush.io.", e)
         subs = pd.DataFrame()
     if subs.empty:

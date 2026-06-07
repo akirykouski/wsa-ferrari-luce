@@ -1,14 +1,10 @@
-"""Community-specific sentiment + community profiling (RQ2 × RQ3).
-
+"""
 The base pipeline scores sentiment per document and aggregates globally. This module
-instead aggregates sentiment **per detected community** — the Louvain communities of
+instead aggregates sentiment per detected community — the Louvain communities of
 users from the interaction graph (communities.py) — and gives each community a
 human-readable label from its members' dominant subreddit plus distinctive keywords,
 so we can read the discourse camps directly: "F1 fans", "EV enthusiasts",
 "Apple/design crowd", "traders", "Ferrari faithful".
-
-Pipeline position: after build_graph + communities (need nodes_communities.csv) AND
-content_sentiment (need documents_sentiment.csv / documents_enriched.csv).
 
 Run:  python -m src.community_sentiment
 Outputs: data/processed/community_sentiment.csv , documents_communities.csv
@@ -26,7 +22,7 @@ SUBREDDIT_LABEL = {
     "electricvehicles": "EV enthusiasts",
     "cars": "Car enthusiasts",
     "wallstreetbets": "Traders / investors",
-    "stocks": "Traders / investors",   # finance subreddits share one camp
+    "stocks": "Traders / investors", 
 }
 
 # Distinctive themes used to refine same-subreddit communities, from their top terms.

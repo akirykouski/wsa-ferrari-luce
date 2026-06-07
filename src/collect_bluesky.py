@@ -1,10 +1,7 @@
-"""LAB 2 — Bluesky (AT Protocol) collector.
-
+"""
 Collects posts matching the topic queries (with engagement + facets + thread
 links) and optionally the follow graph of key accounts.
 
-Run:  python -m src.collect_bluesky
-Outputs:  data/processed/posts_bluesky.csv , data/processed/edges_follows.csv
 """
 from __future__ import annotations
 import os
