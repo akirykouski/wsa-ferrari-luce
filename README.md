@@ -1,10 +1,7 @@
-# WSA Project — "Light or Letdown?": Social Media Analysis of the Ferrari Luce
+# Social Media Analysis of the Ferrari Luce
 
-Web and Social Media Search and Analysis (BSc AI, UniMiB). Track 1 — Social
-Media Analysis: **Network Analysis + Content Analysis + Visualization** of the
-online reaction to Ferrari's first electric car, the **Luce** (revealed 25 May 2026).
+**Network Analysis + Content Analysis + Visualization** of the online reaction to Ferrari's first electric car, the **Luce** (revealed 25 May 2026).
 
-See [`MEGAPLAN.md`](MEGAPLAN.md) for the full objectives, research questions, and method design.
 
 ---
 
@@ -22,7 +19,7 @@ python -m spacy download en_core_web_sm   # NLTK data downloads on first use
 cp .env.example .env                       # optional — collectors run with no creds
 ```
 
-The pipeline lives entirely in `src/` (no separate `scripts/` wrappers); run each
+The pipeline lives entirely in `src/`; run each
 stage as a module, or open `WSA_FerrariLuce_Colab.ipynb`, which imports `src/` directly.
 
 ### Credentials (`.env`)
@@ -51,53 +48,27 @@ stage as a module, or open `WSA_FerrariLuce_Colab.ipynb`, which imports `src/` d
 Each stage is a module under `src/` — run with `python -m src.<name>` (or call its
 `main()` from the notebook).
 
-| # | Command | Lab | Produces |
+| # | Command | Produces |
 |---|---|---|---|
-| 01 | `python -m src.collect_bluesky` | 1,2 | `posts_bluesky.csv`, `edges_follows.csv` |
-| 02 | `python -m src.collect_reddit` | 1,2 | `reddit_submissions.csv`, `reddit_comments.csv` |
-| 03 | `python -m src.build_graph` | 3 | `graph.graphml`, `nodes_centrality.csv`, `graph_summary.txt` |
-| 04 | `python -m src.communities` | 4 | `nodes_communities.csv`, `communities_summary.txt` |
-| 05 | `python -m src.content_sentiment` | 5 | `documents_sentiment.csv`, `aspect_sentiment.csv`, `sentiment_timeline.csv` |
-| 06 | `python -m src.content_enrich` | + | `documents_enriched.csv`, `topics_keywords.csv`, `language_sentiment.csv` |
-| 07 | `python -m src.ner_entities` | 6 | `entity_frequency.csv`, `entity_cooccurrence.csv`, `entity_sentiment.csv` |
-| 08 | `python -m src.community_sentiment` | 4×5 | `community_sentiment.csv`, `community_camps.csv`, `documents_communities.csv` |
-| 09 | `python -m src.viz` | — | all figures (`.png`) in `figures/` |
+| 01 | `python -m src.collect_bluesky` | `posts_bluesky.csv`, `edges_follows.csv` |
+| 02 | `python -m src.collect_reddit`| `reddit_submissions.csv`, `reddit_comments.csv` |
+| 03 | `python -m src.build_graph` | `graph.graphml`, `nodes_centrality.csv`, `graph_summary.txt` |
+| 04 | `python -m src.communities` | `nodes_communities.csv`, `communities_summary.txt` |
+| 05 | `python -m src.content_sentiment` | `documents_sentiment.csv`, `aspect_sentiment.csv`, `sentiment_timeline.csv` |
+| 06 | `python -m src.content_enrich`| `documents_enriched.csv`, `topics_keywords.csv`, `language_sentiment.csv` |
+| 07 | `python -m src.ner_entities` | `entity_frequency.csv`, `entity_cooccurrence.csv`, `entity_sentiment.csv` |
+| 08 | `python -m src.community_sentiment` | `community_sentiment.csv`, `community_camps.csv`, `documents_communities.csv` |
+| 09 | `python -m src.viz` | all figures (`.png`) in `figures/` |
 
 Stages 03–08 read the CSVs in `data/processed/`, so once collection (01–02) has
 run you can re-run analysis freely. Outputs are written to `data/processed/`
-(tables) and `figures/` (all charts as `.png`, including the community-coloured
-interaction network).
+(tables) and `figures/` 
 
 ---
 
-## 3. What maps to what (labs & research questions)
 
-- **LAB 1** (scraping/`re`) → text cleaning in `utils.py` (no news scraped).
-- **LAB 2** (atproto/PRAW) → `collect_bluesky.py`, `collect_reddit.py` (PRAW
-  read-only primary; Arctic-Shift then PullPush.io as no-account fallbacks).
-- **LAB 3** (centrality) → `build_graph.py` — directed interaction graph,
-  in/out-degree, betweenness, closeness, PageRank, eigenvector (**RQ1**).
-- **LAB 4** (communities) → `communities.py` — Louvain + greedy modularity,
-  modularity Q, assortativity (**RQ2**).
-- **LAB 5** (sentiment) → `content_sentiment.py` — VADER + AFINN + NRC emotions
-  + twitter-roberta; aspect-based sentiment (**RQ3, RQ4**).
-- **Enrichments** → `content_enrich.py` — sarcasm/irony (**RQ6**), stance
-  (**RQ7**), topic modelling, language segmentation (**RQ8**).
-- **LAB 6** (NER) → `ner_entities.py` — spaCy entities, co-occurrence,
-  entity-level sentiment (**RQ5**).
-- **LAB 4 × LAB 5** (community-specific sentiment) → `community_sentiment.py` —
-  joins per-document sentiment to the Louvain user-communities and labels each
-  community from its dominant subreddit + distinctive keywords (**F1 fans**,
-  **EV enthusiasts**, **Apple/design crowd**, **traders**, **Ferrari faithful**),
-  then rolls them up into discourse "camps" with per-camp sentiment (**RQ2 × RQ3**).
 
-**Graceful degradation:** if a transformer/topic model isn't installed, that
-step logs a warning and is skipped while lexicon results (VADER/AFINN/NRC) and
-all network analysis still complete.
-
----
-
-## 4. Two preprocessing lanes (by design)
+## 3. Two preprocessing lanes
 - **Lane A — word-level** (`utils.tokens_for_lexicon`, NLTK `TweetTokenizer`):
   feeds VADER/AFINN/NRC, word clouds. Heavier cleaning + lemmatisation.
 - **Lane B — subword BPE** (`utils.clean_for_transformer` → model's
@@ -106,16 +77,9 @@ all network analysis still complete.
 
 ---
 
-## 5. Ethics & ToS
+## 4. Ethics & ToS
 - Bluesky App Password + Reddit read-only OAuth only; no HTML scraping of Reddit.
 - Only public posts; `.env` is git-ignored. Treat usernames as personal data —
   aggregate in the report, don't single out private individuals.
 
----
 
-## 6. Submission checklist
-- Rename this folder to **`WSA_surname1_surname2[_surname3]`** for the Google
-  Drive submission.
-- Include: this code + `README.md`, the `data/` you collected, the final report
-  (`report/`), and the slides. Share ≥ 7 days before the exam with
-  `marco.viviani@unimib.it`, `davide.mancino@unimib.it`, `m.braga@campus.unimib.it`.
